@@ -24,8 +24,6 @@ spec:
       - name: vchord
         image:
           reference: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
-        dynamic_library_path:
-          - /
   enableSuperuserAccess: true
   monitoring:
     enablePodMonitor: true
