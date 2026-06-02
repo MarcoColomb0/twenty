@@ -1,0 +1,6 @@
+machine:
+  disks:
+    - device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+      partitions:
+        - size: 0
+          mountpoint: /var/local-path-provisioner
