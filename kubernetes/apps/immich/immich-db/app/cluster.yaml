@@ -17,13 +17,12 @@ spec:
         name: immich-db-secret
       postInitApplicationSQL:
         - CREATE EXTENSION IF NOT EXISTS vchord
+  extensions:
+    - name: vchord
+      image: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
   postgresql:
     shared_preload_libraries:
       - vchord.so
-    extensions:
-      - name: vchord
-        image:
-          reference: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
   enableSuperuserAccess: true
   monitoring:
     enablePodMonitor: true
