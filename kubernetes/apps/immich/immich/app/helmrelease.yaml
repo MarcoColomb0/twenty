@@ -47,6 +47,7 @@ spec:
           size: 10Gi
           type: persistentVolumeClaim
           storageClass: local-path
+          accessMode: ReadWriteOnce
 
     service:
       main:
