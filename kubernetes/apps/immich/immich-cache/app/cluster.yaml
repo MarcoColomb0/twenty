@@ -1,0 +1,14 @@
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: immich-cache
+spec:
+  replicas: 1
+  image: ghcr.io/dragonflydb/dragonfly:v1.38.1
+  resources:
+    limits:
+      memory: 512Mi
+  args:
+    - --maxmemory=512Mi
+    - --proactor_threads=2
