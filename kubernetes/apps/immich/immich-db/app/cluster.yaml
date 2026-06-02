@@ -25,9 +25,7 @@ spec:
         image:
           reference: ghcr.io/tensorchord/vchord-scratch:pg18-v1.1.1
         dynamic_library_path:
-          - /usr/lib/postgresql/18/lib
-        extension_control_path:
-          - /usr/share/postgresql/18/extension
+          - /
   enableSuperuserAccess: true
   monitoring:
     enablePodMonitor: true
