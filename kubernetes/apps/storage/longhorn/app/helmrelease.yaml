@@ -4,9 +4,12 @@ kind: HelmRelease
 metadata:
   name: longhorn
 spec:
-  chartRef:
-    kind: OCIRepository
-    name: longhorn
+  chart:
+    spec:
+      chart: longhorn
+      sourceRef:
+        kind: HelmRepository
+        name: longhorn
   interval: 1h
   values:
     defaultSettings:
