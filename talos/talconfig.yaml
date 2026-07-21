@@ -11,8 +11,10 @@ additionalApiServerCertSans: &sans
   - "twenty.marco.wf"
 additionalMachineCertSans: *sans
 
-clusterPodNets: ["10.42.0.0/16"]
-clusterSvcNets: ["10.43.0.0/16"]
+clusterPodNets:
+  - "10.42.0.0/16"
+clusterSvcNets:
+  - "10.43.0.0/16"
 
 # Disable built-in CNI to use Cilium
 cniConfig:
@@ -38,6 +40,40 @@ nodes:
         mtu: 1500
         vip:
           ip: "192.168.100.100"
+    patches:
+      - |
+        machine:
+          disks:
+            - device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+              partitions:
+                - mountpoint: /var/local-path-provisioner
+
+  - hostname: "twenty-virt01"
+    ipAddress: "192.168.100.201"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/bb0ba48a52352c699781aeeb4aa1983b80ccc778c2eac94590fe6b4ab3c0fd00
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:46:09:5b"
+        dhcp: false
+        addresses:
+          - "192.168.100.201/24"
+        routes:
+          - gateway: "192.168.100.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.100.100"
+    patches:
+      - |
+        machine:
+          disks:
+            - device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+              partitions:
+                - mountpoint: /var/local-path-provisioner
 
 # Global patches
 patches:
@@ -51,4 +87,3 @@ patches:
 controlPlane:
   patches:
     - "@./patches/controller/cluster.yaml"
-
