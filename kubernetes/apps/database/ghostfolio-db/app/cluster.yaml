@@ -12,5 +12,3 @@ spec:
     initdb:
       database: ghostfolio
       owner: ghostfolio
-      secret:
-        name: postgres-ghostfolio-app

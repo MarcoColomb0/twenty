@@ -5,6 +5,8 @@ metadata:
   name: ghostfolio-dragonfly
 spec:
   replicas: 1
+  args:
+    - --proactor_threads=2
   resources:
     requests:
       cpu: 100m
