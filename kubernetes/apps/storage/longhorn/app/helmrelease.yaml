@@ -13,7 +13,6 @@ spec:
   interval: 1h
   values:
     defaultSettings:
-      defaultDataPath: /var/mnt/lh-storage
       replicaCount: 2
       storageReservedPercentageForDefaultDisk: 10
       storageMinimalAvailablePercentage: 10
