@@ -72,16 +72,14 @@ nodes:
       - deviceSelector:
           hardwareAddr: "b0:0c:d1:53:aa:01"
         dhcp: false
+        addresses:
+          - "192.168.100.202/24"
+        routes:
+          - gateway: "192.168.100.1"
+            network: 0.0.0.0/0
         mtu: 1500
-        vlans:
-          - vlanId: 100
-            addresses:
-              - "192.168.100.202/24"
-            routes:
-              - gateway: "192.168.100.1"
-                network: 0.0.0.0/0
-            vip:
-              ip: "192.168.100.100"
+        vip:
+          ip: "192.168.100.100"
 
 # Global patches
 patches:
