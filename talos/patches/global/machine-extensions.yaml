@@ -1,6 +1,0 @@
----
-machine:
-  install:
-    extensions:
-      - name: siderolabs/iscsi-tools
-      - name: siderolabs/util-linux-tools

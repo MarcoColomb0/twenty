@@ -66,7 +66,7 @@ nodes:
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
-    talosImageURL: factory.talos.dev/installer/bb0ba48a52352c699781aeeb4aa1983b80ccc778c2eac94590fe6b4ab3c0fd00
+    talosImageURL: factory.talos.dev/installer/c68d756e6a83d44564743c7d62b6551e42cac22fa2d1b3fdafacd7253f76d6a0
     controlPlane: true
     networkInterfaces:
       - deviceSelector:
@@ -90,7 +90,6 @@ patches:
   - "@./patches/global/machine-network.yaml"
   - "@./patches/global/machine-sysctls.yaml"
   - "@./patches/global/machine-time.yaml"
-  - "@./patches/global/machine-extensions.yaml"
 
 # Controller patches
 controlPlane:
