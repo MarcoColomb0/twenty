@@ -2,5 +2,5 @@
 machine:
   install:
     extensions:
-      - siderolabs/iscsi-tools
-      - siderolabs/util-linux-tools
+      - name: siderolabs/iscsi-tools
+      - name: siderolabs/util-linux-tools
