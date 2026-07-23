@@ -1,12 +1,13 @@
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: default
+namespace: database
 
 components:
   - ../../components/sops
 
 resources:
   - ./namespace.yaml
-  - ./echo/ks.yaml
-  - ./ghostfolio/ks.yaml
+  - ./cloudnative-pg/ks.yaml
+  - ./dragonfly/ks.yaml
+  - ./ghostfolio-db/ks.yaml

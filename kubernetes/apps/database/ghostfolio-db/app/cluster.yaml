@@ -1,0 +1,16 @@
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-ghostfolio
+spec:
+  instances: 1
+  storage:
+    size: 2Gi
+    storageClass: longhorn
+  bootstrap:
+    initdb:
+      database: ghostfolio
+      owner: ghostfolio
+      secret:
+        name: postgres-ghostfolio-app

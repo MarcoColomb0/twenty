@@ -1,0 +1,51 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ghostfolio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ghostfolio
+  template:
+    metadata:
+      labels:
+        app: ghostfolio
+    spec:
+      containers:
+        - name: ghostfolio
+          image: docker.io/ghostfolio/ghostfolio:3.32.0
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3333"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-ghostfolio-app
+                  namespace: database
+                  key: uri
+            - name: REDIS_HOST
+              value: ghostfolio-dragonfly.database.svc.cluster.local
+            - name: REDIS_PORT
+              value: "6379"
+            - name: ACCESS_TOKEN_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: ghostfolio-secret
+                  key: ACCESS_TOKEN_SALT
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ghostfolio-secret
+                  key: JWT_SECRET_KEY
+          ports:
+            - containerPort: 3333
+              name: http
+          resources:
+            requests:
+              cpu: 10m
+            limits:
+              memory: 3500Mi

@@ -26,7 +26,7 @@ nodes:
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
-    talosImageURL: factory.talos.dev/installer/bb0ba48a52352c699781aeeb4aa1983b80ccc778c2eac94590fe6b4ab3c0fd00
+    talosImageURL: factory.talos.dev/installer/83d43a658b49b2fee28c705f385357d0d73de7f1ee03d304b0ef57ad6dee49c4
     controlPlane: true
     networkInterfaces:
       - deviceSelector:
@@ -46,7 +46,7 @@ nodes:
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
-    talosImageURL: factory.talos.dev/installer/bb0ba48a52352c699781aeeb4aa1983b80ccc778c2eac94590fe6b4ab3c0fd00
+    talosImageURL: factory.talos.dev/installer/83d43a658b49b2fee28c705f385357d0d73de7f1ee03d304b0ef57ad6dee49c4
     controlPlane: true
     networkInterfaces:
       - deviceSelector:
@@ -66,7 +66,7 @@ nodes:
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
-    talosImageURL: factory.talos.dev/installer/c68d756e6a83d44564743c7d62b6551e42cac22fa2d1b3fdafacd7253f76d6a0
+    talosImageURL: factory.talos.dev/installer/2494e85a994d8ac77dd6ca30df4a26912a78c8a538b314d42f6aba0eb9187c07
     controlPlane: true
     networkInterfaces:
       - deviceSelector:
@@ -90,6 +90,7 @@ patches:
   - "@./patches/global/machine-network.yaml"
   - "@./patches/global/machine-sysctls.yaml"
   - "@./patches/global/machine-time.yaml"
+  - "@./patches/global/machine-longhorn.yaml"
 
 # Controller patches
 controlPlane:
