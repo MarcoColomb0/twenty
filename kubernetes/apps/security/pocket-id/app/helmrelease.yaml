@@ -11,7 +11,10 @@ spec:
   values:
     controllers:
       pocket-id:
-        strategy: RollingUpdate
+        # Pocket ID refuses to start when it detects another live instance, so a
+        # rolling update deadlocks: the surge pod exits before the old one retires.
+        # Recreate accepts a few seconds of downtime per rollout instead.
+        strategy: Recreate
         annotations:
           secret.reloader.stakater.com/reload: pocket-id-secret
         containers:
