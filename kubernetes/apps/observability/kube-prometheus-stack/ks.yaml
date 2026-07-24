@@ -4,6 +4,12 @@ kind: Kustomization
 metadata:
   name: kube-prometheus-stack
 spec:
+  dependsOn:
+    # Supplies the pocketid.internal CRDs this app's OIDC client and user group
+    # are declared with. Only gates the initial apply; a later operator outage
+    # does not disturb a running Grafana.
+    - name: pocket-id-operator
+      namespace: security
   interval: 1h
   path: ./kubernetes/apps/observability/kube-prometheus-stack/app
   postBuild:

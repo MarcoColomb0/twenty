@@ -120,6 +120,17 @@ spec:
         userKey: admin-user
         passwordKey: admin-password
       defaultDashboardsTimezone: browser
+      # Client credentials are minted by the pocket-id-operator into the
+      # grafana-oidc Secret alongside this release (see oidcclient.yaml).
+      envValueFrom:
+        GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+          secretKeyRef:
+            name: grafana-oidc
+            key: client_id
+        GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+          secretKeyRef:
+            name: grafana-oidc
+            key: client_secret
       grafana.ini:
         server:
           root_url: https://grafana.${SECRET_DOMAIN}
@@ -127,6 +138,22 @@ spec:
           check_for_updates: false
           check_for_plugin_updates: false
           reporting_enabled: false
+        auth.generic_oauth:
+          enabled: true
+          name: Pocket ID
+          icon: signin
+          # Required for the first login: no Grafana user exists yet for an
+          # OIDC identity, so sign-up has to create one.
+          allow_sign_up: true
+          use_pkce: true
+          scopes: openid profile email groups
+          auth_url: https://id.${SECRET_DOMAIN}/authorize
+          token_url: https://id.${SECRET_DOMAIN}/api/oidc/token
+          api_url: https://id.${SECRET_DOMAIN}/api/oidc/userinfo
+          # Members of the grafana-admins group get Admin, everyone else Viewer.
+          role_attribute_path: "contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'"
+          # Do not refuse the login outright when the groups claim is absent.
+          role_attribute_strict: false
       # Pick up the dashboards shipped by other apps, e.g. cilium sets
       # dashboards.enabled and operator.dashboards.enabled in kube-system.
       sidecar:
