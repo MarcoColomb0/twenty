@@ -25,7 +25,6 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: postgres-ghostfolio-app
-                  namespace: database
                   key: uri
             - name: REDIS_HOST
               value: ghostfolio-dragonfly.database.svc.cluster.local
