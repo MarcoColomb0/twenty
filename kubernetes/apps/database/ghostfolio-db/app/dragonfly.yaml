@@ -5,7 +5,7 @@ kind: Dragonfly
 metadata:
   name: ghostfolio-dragonfly
 spec:
-  replicas: 2
+  replicas: 1
   args:
     - --proactor_threads=3
     - --default_lua_flags=allow-undeclared-keys
