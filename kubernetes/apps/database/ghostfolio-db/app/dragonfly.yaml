@@ -7,11 +7,11 @@ metadata:
 spec:
   replicas: 2
   args:
-    - --proactor_threads=2
+    - --proactor_threads=3
     - --default_lua_flags=allow-undeclared-keys
     - --cluster_mode=emulated
   resources:
     requests:
-      cpu: 100m
+      cpu: 200m
     limits:
-      memory: 768Mi
+      memory: 128Mi
