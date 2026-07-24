@@ -154,6 +154,54 @@ spec:
           role_attribute_path: "contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'"
           # Do not refuse the login outright when the groups claim is absent.
           role_attribute_strict: false
+      # Dashboards for the apps that already expose metrics but ship no
+      # dashboard of their own. Fetched at pod start by the chart's
+      # download-dashboards init container. gnetId entries come from
+      # grafana.com; url entries are pinned to a tag so they cannot drift.
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+            - name: cluster-apps
+              orgId: 1
+              folder: Cluster Apps
+              type: file
+              disableDeletion: false
+              editable: true
+              options:
+                path: /var/lib/grafana/dashboards/cluster-apps
+      dashboards:
+        cluster-apps:
+          longhorn:
+            gnetId: 16888 # Longhorn Monitoring & Backups
+            revision: 14
+            datasource: Prometheus
+          cloudnative-pg:
+            gnetId: 20417 # CloudNativePG
+            revision: 4
+            datasource: Prometheus
+          cert-manager:
+            gnetId: 11001 # cert-manager
+            revision: 1
+            datasource: Prometheus
+          blocky:
+            url: https://raw.githubusercontent.com/0xERR0R/blocky/v0.33.0/docs/blocky-grafana.json
+            datasource: Prometheus
+          envoy-gateway:
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
+            datasource: Prometheus
+          envoy-proxy:
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-proxy-global.json
+            datasource: Prometheus
+          envoy-clusters:
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-clusters.json
+            datasource: Prometheus
+          flux-performance:
+            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-performance.json
+            datasource: Prometheus
+          flux-k8s-api:
+            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-k8s-api-performance.json
+            datasource: Prometheus
       # Pick up the dashboards shipped by other apps, e.g. cilium sets
       # dashboards.enabled and operator.dashboards.enabled in kube-system.
       sidecar:
