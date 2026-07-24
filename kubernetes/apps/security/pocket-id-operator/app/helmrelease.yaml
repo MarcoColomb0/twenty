@@ -1,0 +1,47 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: pocket-id-operator
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: pocket-id-operator
+  interval: 1h
+  values:
+    # Deprecated top-level block: left off so the chart does not try to deploy a
+    # Pocket ID of its own. Ours is managed by the pocket-id HelmRelease.
+    instance:
+      enabled: false
+
+    pocket-id-instance:
+      instance:
+        enabled: true
+        name: pocket-id
+        # No operator-managed workload exists in external mode, so there is
+        # nothing for this ServiceMonitor to scrape.
+        serviceMonitor:
+          enabled: false
+        spec:
+          # Adoption mode: the operator creates no workload and drives the
+          # existing instance over its API. Uses the in-cluster Service rather
+          # than https://id.${SECRET_DOMAIN} so API traffic skips the gateway
+          # and the Cloudflare tunnel entirely.
+          external:
+            url: http://pocket-id.security.svc.cluster.local:1411
+            apiKeySecretRef:
+              name: pocket-id-secret
+              key: STATIC_API_KEY
+
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+      dashboard:
+        enabled: true
+        labels:
+          grafana_dashboard: "1"
+        # We run Grafana from kube-prometheus-stack, not the grafana-operator,
+        # so the sidecar picks the ConfigMap up by label and the CR is unused.
+        grafanaDashboard:
+          enabled: false
