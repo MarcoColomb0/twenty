@@ -9,8 +9,8 @@ spec:
     name: pocket-id-operator
   interval: 1h
   values:
-    # Deprecated top-level block: left off so the chart does not try to deploy a
-    # Pocket ID of its own. Ours is managed by the pocket-id HelmRelease.
+    # Deprecated top-level block; the instance is configured under
+    # pocket-id-instance below.
     instance:
       enabled: false
 
@@ -18,20 +18,96 @@ spec:
       instance:
         enabled: true
         name: pocket-id
-        # No operator-managed workload exists in external mode, so there is
-        # nothing for this ServiceMonitor to scrape.
         serviceMonitor:
-          enabled: false
+          enabled: true
         spec:
-          # Adoption mode: the operator creates no workload and drives the
-          # existing instance over its API. Uses the in-cluster Service rather
-          # than https://id.${SECRET_DOMAIN} so API traffic skips the gateway
-          # and the Cloudflare tunnel entirely.
-          external:
-            url: http://pocket-id.security.svc.cluster.local:1411
-            apiKeySecretRef:
-              name: pocket-id-secret
-              key: STATIC_API_KEY
+          appUrl: https://id.${SECRET_DOMAIN}
+
+          encryptionKey:
+            valueFrom:
+              secretKeyRef:
+                name: pocket-id-secret
+                key: ENCRYPTION_KEY
+
+          # Published by CNPG into this namespace by the pocket-id-db Kustomization
+          databaseUrl:
+            valueFrom:
+              secretKeyRef:
+                name: postgres-pocket-id-app
+                key: uri
+
+          # The operator hard-codes replicas: 1 and strategy: Recreate, which is
+          # required: pocket-id refuses to start while another instance is live.
+          deploymentType: Deployment
+
+          # Enabling the managed route also gives TRUST_PROXY a sensible default
+          # (private/loopback ranges) instead of trusting every X-Forwarded-For.
+          route:
+            enabled: true
+            # hostnames omitted on purpose: the operator derives them from
+            # appUrl above. The chart's schema validates hostnames against a
+            # strict DNS regex, which the ${SECRET_DOMAIN} placeholder cannot
+            # satisfy until Flux substitutes it.
+            parentRefs:
+              - group: gateway.networking.k8s.io
+                kind: Gateway
+                name: envoy-external
+                namespace: network
+                sectionName: https
+
+          analyticsDisabled: true
+          versionCheckDisabled: true
+
+          metrics:
+            enabled: true
+
+          logging:
+            level: info
+            json: true
+
+          # SMTP is injected as env rather than via spec.smtp: that block only
+          # supports valueFrom for `password`, so host/user/from/port would sit in
+          # plaintext in this public repo. spec.env takes full secretKeyRef syntax,
+          # so every value stays in the SOPS secret.
+          env:
+            - name: SMTP_ENABLED
+              value: "true"
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: pocket-id-secret
+                  key: SMTP_HOST
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: pocket-id-secret
+                  key: SMTP_PORT
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: pocket-id-secret
+                  key: SMTP_FROM
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: pocket-id-secret
+                  key: SMTP_USER
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pocket-id-secret
+                  key: SMTP_PASSWORD
+            - name: SMTP_TLS
+              valueFrom:
+                secretKeyRef:
+                  name: pocket-id-secret
+                  key: SMTP_TLS
+
+          resources:
+            requests:
+              cpu: 10m
+            limits:
+              memory: 256Mi
 
     metrics:
       enabled: true
@@ -41,7 +117,7 @@ spec:
         enabled: true
         labels:
           grafana_dashboard: "1"
-        # We run Grafana from kube-prometheus-stack, not the grafana-operator,
-        # so the sidecar picks the ConfigMap up by label and the CR is unused.
+        # Grafana comes from kube-prometheus-stack, not grafana-operator, so the
+        # sidecar picks the ConfigMap up by label and the CR is unused.
         grafanaDashboard:
           enabled: false

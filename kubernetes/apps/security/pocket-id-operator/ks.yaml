@@ -5,7 +5,7 @@ metadata:
   name: pocket-id-operator
 spec:
   dependsOn:
-    - name: pocket-id
+    - name: pocket-id-db
       namespace: security
   interval: 1h
   path: ./kubernetes/apps/security/pocket-id-operator/app
