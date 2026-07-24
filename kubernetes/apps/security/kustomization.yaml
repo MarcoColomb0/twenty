@@ -8,5 +8,6 @@ components:
 
 resources:
   - ./namespace.yaml
+  - ./crowdsec/ks.yaml
   - ./pocket-id-db/ks.yaml
   - ./pocket-id-operator/ks.yaml

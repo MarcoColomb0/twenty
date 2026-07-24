@@ -1,0 +1,81 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: crowdsec
+spec:
+  chart:
+    spec:
+      chart: crowdsec
+      version: 0.24.0
+      sourceRef:
+        kind: HelmRepository
+        name: crowdsec
+  interval: 1h
+  values:
+    # Talos runs containerd, so pod logs are in CRI format
+    container_runtime: containerd
+
+    agent:
+      # Only the external gateway is worth watching: envoy-internal serves the
+      # LAN, which is whitelisted anyway.
+      acquisition:
+        - namespace: network
+          podName: envoy-external-*
+          program: envoy
+      env:
+        - name: PARSERS
+          value: crowdsecurity/cri-logs
+        # Pulls in crowdsecurity/base-http-scenarios as a dependency.
+        - name: COLLECTIONS
+          value: yanis-kouidri/envoy
+      # NOTE: crowdsecurity/whitelists stays enabled on purpose. It whitelists
+      # RFC1918, which is what stops a parsing mistake from banning the
+      # cloudflared pod and taking every public service down with it.
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 256Mi
+
+    appsec:
+      enabled: true
+      acquisitions:
+        - source: appsec
+          listen_addr: "0.0.0.0:7422"
+          path: /
+          appsec_config: crowdsecurity/crs-vpatch
+          labels:
+            type: appsec
+      env:
+        - name: COLLECTIONS
+          value: crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-crs
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 512Mi
+
+    lapi:
+      # Registers the envoy bouncer at startup from BOUNCER_KEY_envoy.
+      envFrom:
+        - secretRef:
+            name: crowdsec-bouncer-key
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 256Mi
+      persistentVolume:
+        data:
+          enabled: true
+          storageClassName: longhorn
+          size: 2Gi
+        config:
+          enabled: true
+          storageClassName: longhorn
+          size: 128Mi
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
