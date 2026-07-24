@@ -12,9 +12,17 @@
 # Kubernetes
 kubeconfig
 talosconfig
-# Misc.
+# AI tooling — local only, never committed to this public repo
+CLAUDE.md
+AGENTS.md
 .claude/
+.agents/
+.cursor/
+.aider*
+skills-lock.json
+# Misc.
 .private/
 .venv/
 .DS_Store
 Thumbs.db
+
