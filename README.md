@@ -3,8 +3,9 @@
 My home Kubernetes cluster, running on bare metal and a VM at home, managed entirely through Git.
 
 [Talos Linux](https://www.talos.dev) for the OS, [Flux](https://fluxcd.io) for GitOps, [Cilium](https://cilium.io)
-for networking, [SOPS](https://github.com/getsops/sops) for secrets. Everything that runs in the cluster
-is declared in this repository — nothing is applied by hand.
+for networking, [Pocket ID](https://github.com/pocket-id/pocket-id) for single sign-on,
+[SOPS](https://github.com/getsops/sops) for secrets. Everything that runs in the cluster is declared in
+this repository — nothing is applied by hand, including DNS records and OIDC clients.
 
 ## Live status
 
@@ -71,9 +72,21 @@ patches under [`talos/patches/`](./talos/patches).
 | [Envoy Gateway](https://gateway.envoyproxy.io) | Gateway API ingress, internal and external. |
 | [cert-manager](https://cert-manager.io) | Wildcard TLS from Let's Encrypt via DNS-01. |
 | [external-dns](https://github.com/kubernetes-sigs/external-dns) | Publishes public DNS records to Cloudflare. |
-| [k8s-gateway](https://github.com/k8s-gateway/k8s_gateway) | Resolves cluster hostnames on the home network (split DNS). |
+| [k8s-gateway](https://github.com/k8s-gateway/k8s_gateway) | Answers for cluster hostnames, with records derived from `HTTPRoute` and `Service`. |
+| [Blocky](https://github.com/0xERR0R/blocky) | The LAN's resolver. Forwards the cluster domain to k8s-gateway, everything else upstream over DNS-over-TLS, and blocks ads on the way. |
 | [cloudflared](https://github.com/cloudflare/cloudflared) | Tunnel for public traffic — no ports forwarded on the router. |
 | [Reloader](https://github.com/stakater/Reloader) | Restarts workloads when their ConfigMaps or Secrets change. |
+
+### Identity
+
+| Component | Purpose |
+|---|---|
+| [Pocket ID](https://github.com/pocket-id/pocket-id) | OIDC provider. Passkeys only — there is no password to phish. Backed by CloudNativePG. |
+| [pocket-id-operator](https://github.com/aclerici38/pocket-id-operator) | Manages the OIDC clients, users and groups inside Pocket ID as Kubernetes resources, so they live in this repository rather than in a web UI. |
+
+Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates the client, writes the
+credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
+rebuilds it identically. Grafana signs in this way.
 
 ### Storage and data
 
@@ -90,8 +103,13 @@ patches under [`talos/patches/`](./talos/patches).
 | [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts) | Prometheus (14d retention on Longhorn), Alertmanager, Grafana, kube-state-metrics, node-exporter. |
 | [Kromgo](https://github.com/home-operations/kromgo) | Turns whitelisted PromQL into the public badges and graphs above. |
 
-Grafana, Prometheus, and Alertmanager are reachable on the internal gateway only. Kromgo is the one
-piece deliberately exposed publicly, because GitHub has to be able to fetch the badges on this page.
+Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,
+cert-manager, Blocky and Pocket ID. Grafana carries the kubernetes-mixin dashboards plus one per app,
+pinned by revision or release tag so upstream cannot quietly change what a panel shows.
+
+Grafana, Prometheus, and Alertmanager are reachable on the internal gateway only, and Grafana signs in
+through Pocket ID. Kromgo is the one piece deliberately exposed publicly, because GitHub has to be
+able to fetch the badges on this page.
 
 ### Applications
 
@@ -109,13 +127,32 @@ piece deliberately exposed publicly, because GitHub has to be able to fetch the 
 | API server VIP | `192.168.100.100` |
 | Internal gateway | `192.168.100.101` |
 | External gateway | `192.168.100.102` |
+| k8s-gateway (cluster DNS) | `192.168.100.103` |
+| Blocky (LAN DNS) | `192.168.100.104` |
 
 Cilium runs in native routing mode with `kubeProxyReplacement` enabled, so there is no kube-proxy and
-no overlay. Gateway load balancer IPs are handed out by Cilium's LB-IPAM and announced on the LAN over
-L2. Public traffic arrives through a Cloudflare tunnel rather than an open port.
+no overlay. Load balancer IPs are handed out by Cilium's LB-IPAM and announced on the LAN over L2.
+Public traffic arrives through a Cloudflare tunnel rather than an open port.
 
 Anything attached to the `envoy-internal` gateway resolves only on the home network; anything on
 `envoy-external` is reachable from the internet.
+
+### DNS
+
+The LAN points at Blocky, which splits queries three ways:
+
+```
+LAN client ──► 192.168.100.104  blocky ×3, one per node
+                    │
+                    ├── cluster domain ──► 192.168.100.103  k8s-gateway
+                    │                          └─► envoy-internal .101 / envoy-external .102
+                    │
+                    └── everything else ──► DNS-over-TLS upstream, ads blocked
+```
+
+Nothing here maintains a DNS record by hand. k8s-gateway derives them from the `HTTPRoute` objects in
+this repository, so an app becomes resolvable on the LAN the moment its route exists — and
+external-dns does the same for public names in Cloudflare.
 
 ## Repository layout
 
@@ -140,8 +177,12 @@ kubernetes/apps/<namespace>/<app>/
     └── helmrelease.yaml
 ```
 
+Namespaces map to directories under `kubernetes/apps/`: `cert-manager`, `database`, `default`,
+`flux-system`, `kube-system`, `network`, `observability`, `security`, `storage`.
+
 Secrets are committed encrypted with SOPS and age, and decrypted in-cluster by Flux. Files matching
-`*.sops.yaml` are never readable in this repository.
+`*.sops.yaml` are never readable in this repository — **this repository is public**, so every value
+that should stay private lives inside one of them.
 
 ## Operating it
 
