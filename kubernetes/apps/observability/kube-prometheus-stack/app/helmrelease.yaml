@@ -167,6 +167,10 @@ spec:
         enabled: true
         storageClassName: longhorn
         size: 5Gi
+      # The Longhorn PVC is ReadWriteOnce, so a rolling update deadlocks: the new
+      # pod cannot attach the volume while the old one still holds it.
+      deploymentStrategy:
+        type: Recreate
       resources:
         requests:
           cpu: 10m
