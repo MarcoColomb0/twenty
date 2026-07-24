@@ -44,7 +44,11 @@ spec:
             - containerPort: 3333
               name: http
           resources:
+            # A limit with no request makes the request equal to the limit, so
+            # the old 3500Mi limit reserved 3500Mi per replica. Measured peak
+            # over 24h is ~540Mi.
             requests:
               cpu: 10m
+              memory: 512Mi
             limits:
-              memory: 3500Mi
+              memory: 1Gi
