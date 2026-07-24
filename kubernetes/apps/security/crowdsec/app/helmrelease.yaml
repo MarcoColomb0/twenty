@@ -45,12 +45,15 @@ spec:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
           path: /
-          appsec_config: crowdsecurity/crs-vpatch
+          # Shipped by the appsec-virtual-patching collection below. Targeted
+          # CVE signatures rather than the full OWASP CRS, which is far more
+          # prone to false positives on a first deployment.
+          appsec_config: crowdsecurity/virtual-patching
           labels:
             type: appsec
       env:
         - name: COLLECTIONS
-          value: crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-crs
+          value: crowdsecurity/appsec-virtual-patching
       resources:
         requests:
           cpu: 10m
