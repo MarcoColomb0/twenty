@@ -62,10 +62,17 @@ spec:
           memory: 512Mi
 
     lapi:
-      # Registers the envoy bouncer at startup from BOUNCER_KEY_envoy.
+      # Registers the envoy bouncer at startup from BOUNCER_KEY_envoy, and
+      # enrolls into the CrowdSec console from ENROLL_KEY. Both live in the
+      # SOPS secret because this repository is public.
       envFrom:
         - secretRef:
             name: crowdsec-bouncer-key
+      env:
+        - name: ENROLL_INSTANCE_NAME
+          value: twenty
+        - name: ENROLL_TAGS
+          value: k8s talos homelab
       resources:
         requests:
           cpu: 10m
