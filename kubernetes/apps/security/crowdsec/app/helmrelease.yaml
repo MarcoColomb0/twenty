@@ -46,18 +46,28 @@ spec:
 
     appsec:
       enabled: true
+      configs:
+        twenty-appsec-full.yaml: |
+          name: twenty/appsec-full
+          default_remediation: ban
+          inband_rules:
+            - crowdsecurity/base-config
+            - crowdsecurity/vpatch-*
+            - crowdsecurity/generic-*
+            - crowdsecurity/crs
+          outofband_rules:
+            - crowdsecurity/experimental-*
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
           path: /
-          # Shipped by the collections below. virtual-patching is targeted CVE
-          # signatures; generic-rules and crs-inband broaden that considerably.
-          # crs-inband in particular is false-positive prone, so watch the
-          # console before any bouncer is allowed to act on its decisions.
-          appsec_configs:
-            - crowdsecurity/virtual-patching
-            - crowdsecurity/generic-rules
-            - crowdsecurity/crs-inband
+          # One merged config rather than a list of hub ones. Both
+          # crowdsecurity/virtual-patching and crowdsecurity/generic-rules pull
+          # in crowdsecurity/base-config, and listing them together loads it
+          # twice: "failed to compile the directive secrule: duplicated rule
+          # id 100", which crashloops the pod. Naming each rule set once avoids
+          # that while still loading all of them.
+          appsec_config: twenty/appsec-full
           labels:
             type: appsec
       env:
