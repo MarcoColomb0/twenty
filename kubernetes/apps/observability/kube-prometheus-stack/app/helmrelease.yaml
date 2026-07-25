@@ -202,6 +202,21 @@ spec:
           flux-k8s-api:
             url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-k8s-api-performance.json
             datasource: Prometheus
+          # crowdsecurity/grafana-dashboards publishes no tags, so these are
+          # pinned to a commit instead. dashboards_v5 is the set that matches
+          # the 1.7.x engine running in security.
+          crowdsec-overview:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/Crowdsec%20Overview.json
+            datasource: Prometheus
+          crowdsec-insight:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/Crowdsec%20Insight.json
+            datasource: Prometheus
+          crowdsec-per-machine:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/Crowdsec%20Details%20per%20Machine.json
+            datasource: Prometheus
+          crowdsec-lapi:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/LAPI%20Metrics.json
+            datasource: Prometheus
       # Pick up the dashboards shipped by other apps, e.g. cilium sets
       # dashboards.enabled and operator.dashboards.enabled in kube-system.
       sidecar:

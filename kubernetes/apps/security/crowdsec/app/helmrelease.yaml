@@ -43,6 +43,12 @@ spec:
           memory: 128Mi
         limits:
           memory: 256Mi
+      # Per-machine panels in the CrowdSec dashboards read agent metrics, which
+      # the chart exposes on 6060 but does not scrape by default.
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
 
     appsec:
       enabled: true
@@ -82,6 +88,10 @@ spec:
           memory: 128Mi
         limits:
           memory: 512Mi
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
 
     lapi:
       # Registers the envoy bouncer at startup from BOUNCER_KEY_envoy, and
