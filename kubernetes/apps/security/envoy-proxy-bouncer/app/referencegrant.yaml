@@ -1,0 +1,18 @@
+---
+# The SecurityPolicy lives in network, next to the Gateway it targets, but the
+# ext_authz backend runs here in security so it can read crowdsec-bouncer-key
+# without copying the secret across namespaces. Gateway API requires the
+# referenced namespace to opt in explicitly.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: envoy-proxy-bouncer-from-network
+spec:
+  from:
+    - group: gateway.envoyproxy.io
+      kind: SecurityPolicy
+      namespace: network
+  to:
+    - group: ""
+      kind: Service
+      name: envoy-proxy-bouncer

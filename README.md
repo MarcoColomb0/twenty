@@ -88,6 +88,24 @@ Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates 
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
 rebuilds it identically. Grafana signs in this way.
 
+### Security
+
+| Component | Purpose |
+|---|---|
+| [CrowdSec](https://crowdsec.net) | Reads the external gateway's access logs, scores behaviour against community scenarios, and issues bans. Enrolled in the CrowdSec console as `twenty`. |
+| [envoy-proxy-bouncer](https://github.com/kdwils/envoy-proxy-crowdsec-bouncer) | Enforces those bans, as an `ext_authz` check on every request the external gateway serves. |
+
+The agent runs as a DaemonSet and only tails `envoy-external` — the internal gateway serves the LAN,
+which is whitelisted anyway. AppSec runs alongside it as an in-band WAF, combining targeted virtual
+patching with the generic rules and the OWASP core rule set.
+
+Two things keep this from locking the house from the inside. `crowdsecurity/whitelists` drops RFC1918
+in the parsing pipeline, and because split DNS resolves the cluster domain straight to the
+`envoy-external` VIP on the LAN, local traffic really does arrive with a private source address rather
+than a Cloudflare one. AppSec is evaluated in the bouncer instead of the parsers, so it needs its own
+guard: the bouncer exempts the same private ranges. The `SecurityPolicy` also sets `failOpen`, so a
+bouncer that is down costs remediation and not the gateway.
+
 ### Storage and data
 
 | Component | Purpose |

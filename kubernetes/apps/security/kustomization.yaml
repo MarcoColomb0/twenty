@@ -9,5 +9,6 @@ components:
 resources:
   - ./namespace.yaml
   - ./crowdsec/ks.yaml
+  - ./envoy-proxy-bouncer/ks.yaml
   - ./pocket-id-db/ks.yaml
   - ./pocket-id-operator/ks.yaml

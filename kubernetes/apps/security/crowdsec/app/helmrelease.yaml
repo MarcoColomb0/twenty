@@ -26,9 +26,14 @@ spec:
       env:
         - name: PARSERS
           value: crowdsecurity/cri-logs
-        # Pulls in crowdsecurity/base-http-scenarios as a dependency.
+        # yanis-kouidri/envoy pulls in crowdsecurity/base-http-scenarios and
+        # crowdsecurity/http-cve as dependencies, so neither is listed here.
+        # http-dos is not a dependency of anything and has to be explicit.
         - name: COLLECTIONS
-          value: yanis-kouidri/envoy
+          value: >-
+            yanis-kouidri/envoy
+            crowdsecurity/http-dos
+            crowdsecurity/discord-crawler-whitelist
       # NOTE: crowdsecurity/whitelists stays enabled on purpose. It whitelists
       # RFC1918, which is what stops a parsing mistake from banning the
       # cloudflared pod and taking every public service down with it.
@@ -45,15 +50,22 @@ spec:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
           path: /
-          # Shipped by the appsec-virtual-patching collection below. Targeted
-          # CVE signatures rather than the full OWASP CRS, which is far more
-          # prone to false positives on a first deployment.
-          appsec_config: crowdsecurity/virtual-patching
+          # Shipped by the collections below. virtual-patching is targeted CVE
+          # signatures; generic-rules and crs-inband broaden that considerably.
+          # crs-inband in particular is false-positive prone, so watch the
+          # console before any bouncer is allowed to act on its decisions.
+          appsec_configs:
+            - crowdsecurity/virtual-patching
+            - crowdsecurity/generic-rules
+            - crowdsecurity/crs-inband
           labels:
             type: appsec
       env:
         - name: COLLECTIONS
-          value: crowdsecurity/appsec-virtual-patching
+          value: >-
+            crowdsecurity/appsec-virtual-patching
+            crowdsecurity/appsec-generic-rules
+            crowdsecurity/appsec-crs-inband
       resources:
         requests:
           cpu: 10m

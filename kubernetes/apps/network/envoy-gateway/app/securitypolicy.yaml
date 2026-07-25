@@ -1,0 +1,27 @@
+---
+# Sends every request on the external gateway through the CrowdSec bouncer as
+# an ext_authz check. Deliberately not attached to envoy-internal: the LAN is
+# whitelisted end to end, so a check there would only add a hop.
+#
+# The backend lives in the security namespace, which grants this reference via
+# the ReferenceGrant in security/envoy-proxy-bouncer.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: crowdsec-bouncer
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-external
+  extAuth:
+    # A bouncer that is down must not take the public services with it. This is
+    # the difference between losing remediation and losing the gateway.
+    failOpen: true
+    grpc:
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: envoy-proxy-bouncer
+          namespace: security
+          port: 8080
