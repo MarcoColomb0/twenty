@@ -122,7 +122,8 @@ bouncer that is down costs remediation and not the gateway.
 | [Kromgo](https://github.com/home-operations/kromgo) | Turns whitelisted PromQL into the public badges and graphs above. |
 
 Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,
-cert-manager, Blocky and Pocket ID. Grafana carries the kubernetes-mixin dashboards plus one per app,
+cert-manager, Blocky, Pocket ID, and CrowdSec — the agent on every node, plus AppSec, the LAPI and
+the bouncer. Grafana carries the kubernetes-mixin dashboards plus one per app,
 pinned by revision or release tag so upstream cannot quietly change what a panel shows.
 
 Grafana, Prometheus, and Alertmanager are reachable on the internal gateway only, and Grafana signs in
