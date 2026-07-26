@@ -14,6 +14,45 @@ spec:
         strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
+        initContainers:
+          init-config:
+            # Immich reads clientSecret only from the config file -- it has no
+            # OAuth environment variables, no ${VAR} substitution and no
+            # secret-from-file support, so the file has to be assembled at
+            # startup. Reuses the server image rather than pulling a templating
+            # tool, and lets node do the JSON encoding so a secret containing
+            # quotes or backslashes cannot corrupt the file.
+            image:
+              repository: ghcr.io/immich-app/immich-server
+              tag: v3.0.3
+            command:
+              - node
+              - -e
+              - |
+                const fs = require('node:fs');
+                const cfg = JSON.parse(fs.readFileSync('/config-template/immich.json', 'utf8'));
+                cfg.oauth.clientId = process.env.OIDC_CLIENT_ID;
+                cfg.oauth.clientSecret = process.env.OIDC_CLIENT_SECRET;
+                fs.writeFileSync('/config/immich.json', JSON.stringify(cfg, null, 2));
+            env:
+              OIDC_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidcsecret immich-oidc
+                    key: client_id
+              OIDC_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidcsecret
+                    key: client_secret
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
         containers:
           app:
             image:
@@ -73,6 +112,11 @@ spec:
               limits:
                 memory: 3Gi
     defaultPodOptions:
+      # Temporary: twenty-hp01 is the only node with an iGPU, so Quick Sync
+      # transcoding only works there. The other two are Proxmox VMs with no
+      # /dev/dri. Drop this once they are replaced with bare metal that has one.
+      nodeSelector:
+        kubernetes.io/hostname: twenty-hp01
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -88,12 +132,34 @@ spec:
         existingClaim: immich-data
         globalMounts:
           - path: /data
+      # The rendered config, written by init-config and read by the server.
       config:
+        type: emptyDir
+        advancedMounts:
+          immich:
+            init-config:
+              - path: /config
+            app:
+              - path: /config
+      config-template:
         type: configMap
         name: immich-config
-        globalMounts:
-          - path: /config
-            readOnly: true
+        advancedMounts:
+          immich:
+            init-config:
+              - path: /config-template
+                readOnly: true
+      # renderD128 is mode 0666, so the container reaches it as uid 1000
+      # without extra groups. card0 is root-only and Quick Sync does not need
+      # it, so only the render node is exposed.
+      dri:
+        type: hostPath
+        hostPath: /dev/dri/renderD128
+        hostPathType: CharDevice
+        advancedMounts:
+          immich:
+            app:
+              - path: /dev/dri/renderD128
     service:
       app:
         ports:

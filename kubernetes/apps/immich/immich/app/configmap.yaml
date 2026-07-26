@@ -4,11 +4,14 @@ kind: ConfigMap
 metadata:
   name: immich-config
 data:
-  # Machine learning is off deliberately: no GPU on any node, and the two
-  # Proxmox VMs have no memory headroom for CPU inference. Disabling it here
-  # rather than just omitting the container stops Immich queueing smart-search
-  # and face-detection jobs that would fail forever against a missing service.
-  # Turning it back on is this flag plus a machine-learning controller.
+  # A template, not the file Immich reads. clientId and clientSecret are minted
+  # by the pocket-id-operator into the immich-oidc Secret and are injected at
+  # startup by the init-config container -- this repository is public, so no
+  # credential may appear here.
+  #
+  # Note that IMMICH_CONFIG_FILE makes the whole admin settings page read-only:
+  # Immich refuses with "Cannot update configuration while IMMICH_CONFIG_FILE
+  # is in use". Every setting worth changing has to be changed here.
   immich.json: |-
     {
       "machineLearning": {
@@ -16,5 +19,30 @@ data:
       },
       "newVersionCheck": {
         "enabled": false
+      },
+      "ffmpeg": {
+        "accel": "quicksync",
+        "accelDecode": true,
+        "preferredHwDevice": "/dev/dri/renderD128",
+        "targetVideoCodec": "h264",
+        "targetResolution": "1080",
+        "preset": "medium"
+      },
+      "oauth": {
+        "enabled": true,
+        "issuerUrl": "https://id.${SECRET_DOMAIN}/.well-known/openid-configuration",
+        "endSessionEndpoint": "https://id.${SECRET_DOMAIN}/api/oidc/end-session",
+        "clientId": "",
+        "clientSecret": "",
+        "scope": "openid email profile",
+        "signingAlgorithm": "RS256",
+        "profileSigningAlgorithm": "none",
+        "tokenEndpointAuthMethod": "client_secret_post",
+        "buttonText": "Login with Pocket ID",
+        "autoRegister": true,
+        "autoLaunch": false,
+        "mobileOverrideEnabled": false,
+        "storageLabelClaim": "preferred_username",
+        "timeout": 30000
       }
     }

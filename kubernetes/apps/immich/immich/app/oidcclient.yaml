@@ -1,0 +1,25 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: immich
+spec:
+  # instanceSelector omitted: one PocketIDInstance exists and the operator
+  # resolves it cluster-wide, so the client sits next to Immich and mints its
+  # Secret into this namespace.
+  callbackUrls:
+    - https://immich.${SECRET_DOMAIN}/auth/login
+    # Needed to link an existing local account to Pocket ID from the web UI.
+    - https://immich.${SECRET_DOMAIN}/user-settings
+    # The mobile apps complete the flow on a custom scheme rather than a URL.
+    # Immich hardcodes this value; it is not derived from the hostname.
+    - app.immich:///oauth-callback
+  logoutCallbackUrls:
+    - https://immich.${SECRET_DOMAIN}/auth/logout
+  pkceEnabled: true
+  skipConsent: true
+  secret:
+    name: immich-oidc
+    keys:
+      clientID: client_id
+      clientSecret: client_secret
