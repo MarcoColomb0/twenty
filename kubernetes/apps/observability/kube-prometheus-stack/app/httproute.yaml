@@ -7,7 +7,14 @@ spec:
   hostnames:
     - "grafana.${SECRET_DOMAIN}"
   parentRefs:
-    - name: envoy-internal
+    # The one observability service that is published. It has no login form, so
+    # Pocket ID is the only way in, and the external gateway puts it behind the
+    # CrowdSec bouncer and AppSec like everything else out there.
+    #
+    # Prometheus and Alertmanager below stay internal on purpose: neither has
+    # any authentication at all, so publishing them would hand over every metric
+    # and the ability to silence alerts.
+    - name: envoy-external
       namespace: network
       sectionName: https
   rules:

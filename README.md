@@ -140,9 +140,13 @@ cert-manager, Blocky, Pocket ID, and CrowdSec — the agent on every node, plus 
 the bouncer. Grafana carries the kubernetes-mixin dashboards plus one per app,
 pinned by revision or release tag so upstream cannot quietly change what a panel shows.
 
-Grafana, Prometheus, and Alertmanager are reachable on the internal gateway only, and Grafana signs in
-through Pocket ID. Kromgo is the one piece deliberately exposed publicly, because GitHub has to be
-able to fetch the badges on this page.
+Prometheus and Alertmanager are reachable on the internal gateway only. Neither has any
+authentication, so publishing them would hand over every metric and the ability to silence alerts.
+
+Grafana is published, because it is the one of the three that can defend itself: it has no login form
+at all, so Pocket ID is the only way in, and the external gateway puts it behind the CrowdSec bouncer
+and AppSec like everything else out there. Kromgo is public too, because GitHub has to be able to
+fetch the badges on this page.
 
 ### Applications
 
