@@ -109,14 +109,15 @@ spec:
               requests:
                 cpu: 100m
                 memory: 512Mi
+                # Allocated by the Intel GPU device plugin, which is what
+                # actually grants the device cgroup entry that hostPath could
+                # not. It also places the pod: only nodes advertising this
+                # resource are candidates, so no hostname pin is needed.
+                gpu.intel.com/i915: 1
               limits:
                 memory: 3Gi
+                gpu.intel.com/i915: 1
     defaultPodOptions:
-      # Temporary: twenty-hp01 is the only node with an iGPU, so Quick Sync
-      # transcoding only works there. The other two are Proxmox VMs with no
-      # /dev/dri. Drop this once they are replaced with bare metal that has one.
-      nodeSelector:
-        kubernetes.io/hostname: twenty-hp01
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -149,17 +150,6 @@ spec:
             init-config:
               - path: /config-template
                 readOnly: true
-      # renderD128 is mode 0666, so the container reaches it as uid 1000
-      # without extra groups. card0 is root-only and Quick Sync does not need
-      # it, so only the render node is exposed.
-      dri:
-        type: hostPath
-        hostPath: /dev/dri/renderD128
-        hostPathType: CharDevice
-        advancedMounts:
-          immich:
-            app:
-              - path: /dev/dri/renderD128
     service:
       app:
         ports:

@@ -1,0 +1,27 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: intel-device-plugins-gpu
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: intel-device-plugins-gpu
+  interval: 1h
+  values:
+    name: intel-gpu
+    # The chart would otherwise emit a NodeFeatureRule, which is a Node Feature
+    # Discovery CRD. NFD is not installed here, so the manifest would fail to
+    # apply on an unknown kind.
+    nodeFeatureRule: false
+    # Without NFD there is no intel.feature.node.kubernetes.io/gpu label to
+    # select on. Talos does label nodes by installed extension, but the value is
+    # a version string rather than "true", so it cannot be matched by equality.
+    # Pinned by hostname until the Proxmox VMs are replaced with bare metal that
+    # has an iGPU; at that point this becomes a shared node label.
+    nodeSelector:
+      kubernetes.io/hostname: twenty-hp01
+    # One container at a time may hold the GPU. Raising this shares the render
+    # node between pods, which is not wanted while Immich is its only consumer.
+    sharedDevNum: 1
+    enableMonitoring: true

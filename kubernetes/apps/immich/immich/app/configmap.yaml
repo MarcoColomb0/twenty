@@ -16,13 +16,12 @@ data:
   # This is JSON, so it takes no comments of its own -- anything worth saying
   # about a value has to be said up here.
   #
-  # ffmpeg.accel stays disabled even though twenty-hp01 has a usable iGPU.
-  # hostPath makes /dev/dri/renderD128 visible at mode 0666, but the cgroup
-  # device controller still denies char device 226:128: opening it returns
-  # EPERM, and vainfo reports "Failed to open the given device". Reaching it
-  # needs a privileged container or the Intel GPU device plugin, so this stays
-  # on software encoding rather than a value that only fails once someone
-  # uploads a video.
+  # ffmpeg.accel is qsv: twenty-hp01 is an i5-8500T with Coffee Lake graphics.
+  # The render node arrives through the Intel GPU device plugin rather than a
+  # hostPath mount -- hostPath showed the device but left the cgroup device
+  # controller denying char device 226:128, so opening it returned EPERM.
+  # The value is "qsv"; "quicksync" is the name older releases used and is
+  # rejected at startup.
   immich.json: |-
     {
       "machineLearning": {
@@ -32,7 +31,7 @@ data:
         "enabled": false
       },
       "ffmpeg": {
-        "accel": "disabled",
+        "accel": "qsv",
         "accelDecode": true,
         "targetVideoCodec": "h264",
         "targetResolution": "1080",
