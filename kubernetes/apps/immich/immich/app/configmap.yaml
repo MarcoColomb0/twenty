@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: immich-config
+data:
+  # Machine learning is off deliberately: no GPU on any node, and the two
+  # Proxmox VMs have no memory headroom for CPU inference. Disabling it here
+  # rather than just omitting the container stops Immich queueing smart-search
+  # and face-detection jobs that would fail forever against a missing service.
+  # Turning it back on is this flag plus a machine-learning controller.
+  immich.json: |-
+    {
+      "machineLearning": {
+        "enabled": false
+      },
+      "newVersionCheck": {
+        "enabled": false
+      }
+    }

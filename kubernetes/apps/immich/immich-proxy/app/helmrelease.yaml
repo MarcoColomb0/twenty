@@ -1,0 +1,74 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: immich-proxy
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: immich-proxy
+  interval: 1h
+  values:
+    controllers:
+      immich-proxy:
+        strategy: RollingUpdate
+        containers:
+          app:
+            image:
+              repository: docker.io/alangrainger/immich-public-proxy
+              tag: "3.1.0"
+            env:
+              # Reaches Immich over the cluster network, so Immich itself needs
+              # no external route. This proxy serves /share links and nothing
+              # else -- the library and the admin UI are not reachable through
+              # it even though it is the only publicly exposed half.
+              IMMICH_URL: http://immich.immich.svc.cluster.local:2283
+              PUBLIC_BASE_URL: https://photos.${SECRET_DOMAIN}
+              # No landing page: an unauthenticated visitor to the bare
+              # hostname should learn nothing about what is behind it.
+              CONFIG: '{"ipp": {"showHomePage": false}}'
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /share/healthcheck
+                    port: &port 3000
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "photos.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

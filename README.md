@@ -135,6 +135,8 @@ able to fetch the badges on this page.
 | App | Purpose |
 |---|---|
 | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
+| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only. |
+| [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
 ## Networking
@@ -197,7 +199,7 @@ kubernetes/apps/<namespace>/<app>/
 ```
 
 Namespaces map to directories under `kubernetes/apps/`: `cert-manager`, `database`, `default`,
-`flux-system`, `ghostfolio`, `kube-system`, `network`, `observability`, `security`, `storage`.
+`flux-system`, `ghostfolio`, `immich`, `kube-system`, `network`, `observability`, `security`, `storage`.
 
 An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
 publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting
