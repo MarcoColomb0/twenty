@@ -157,6 +157,8 @@ fetch the badges on this page.
 | [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only, signs in through Pocket ID, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
+| [Stirling PDF](https://github.com/Stirling-Tools/Stirling-PDF) | PDF editing — merge, split, convert, sign. Uploads go to an `emptyDir` and leave with the pod; only settings are kept. |
+| [Karakeep](https://karakeep.app) | Bookmark and read-later archive. Runs its crawler and search index as sidecars reached over localhost, so neither is on the cluster network. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
 ## Networking
@@ -219,7 +221,7 @@ kubernetes/apps/<namespace>/<app>/
 ```
 
 Namespaces map to directories under `kubernetes/apps/`: `cert-manager`, `database`, `default`,
-`flux-system`, `ghostfolio`, `immich`, `kube-system`, `network`, `observability`, `security`, `storage`.
+`flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `network`, `observability`, `security`, `storage`.
 
 An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
 publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting

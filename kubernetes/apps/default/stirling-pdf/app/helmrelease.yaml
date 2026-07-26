@@ -1,0 +1,90 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: stirling-pdf
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: stirling-pdf
+  interval: 1h
+  values:
+    controllers:
+      stirling-pdf:
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              repository: ghcr.io/stirling-tools/stirling-pdf
+              tag: "2.14.2"
+            env:
+              DISABLE_ADDITIONAL_FEATURES: "false"
+              SYSTEM_DEFAULTLOCALE: en-GB
+              # Everything happens in the browser session; nothing is kept, so
+              # there is no login and no account database to look after.
+              SECURITY_ENABLELOGIN: "false"
+              # The JVM sizes its heap from the cgroup limit, so this has to
+              # track the memory limit below rather than being left to default.
+              JAVA_OPTS: -XX:MaxRAMPercentage=70
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/v1/info/status
+                    port: &port 8080
+                  initialDelaySeconds: 30
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 512Mi
+              limits:
+                memory: 1Gi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      # Settings and any custom pipelines survive a restart.
+      config:
+        existingClaim: stirling-pdf-config
+        globalMounts:
+          - path: /configs
+      # Uploads are processed and thrown away. Keeping them on a PVC would mean
+      # storing other people's documents for no reason.
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+      logs:
+        type: emptyDir
+        globalMounts:
+          - path: /logs
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "pdf.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
