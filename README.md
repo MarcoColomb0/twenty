@@ -134,7 +134,7 @@ bouncer that is down costs remediation and not the gateway.
 |---|---|
 | [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts) | Prometheus (5d retention on Longhorn), Alertmanager, Grafana, kube-state-metrics, node-exporter. |
 | [Kromgo](https://github.com/home-operations/kromgo) | Turns whitelisted PromQL into the public badges and graphs above. |
-| [Gatus](https://gatus.io) | Uptime checks. Paired with [gatus-sidecar](https://github.com/home-operations/gatus-sidecar), which turns every `HTTPRoute` into an endpoint, so a service is monitored by being routed rather than by being listed. |
+| [Gatus](https://gatus.io) | Uptime checks, and the closest thing here to a service index. Paired with [gatus-sidecar](https://github.com/home-operations/gatus-sidecar), which turns every `HTTPRoute` into an endpoint, so a service is listed and monitored by being routed rather than by being named anywhere. |
 
 Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,
 cert-manager, Blocky, Pocket ID, and CrowdSec — the agent on every node, plus AppSec, the LAPI and
@@ -156,7 +156,6 @@ fetch the badges on this page.
 | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
 | [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only, signs in through Pocket ID, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
-| [Homepage](https://gethomepage.dev) | Dashboard. Builds its own service list by watching `HTTPRoute` objects for `gethomepage.dev` annotations, so an app appears on it by being deployed. |
 | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
