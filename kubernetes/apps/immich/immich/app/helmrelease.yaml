@@ -14,45 +14,6 @@ spec:
         strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
-        initContainers:
-          init-config:
-            # Immich reads clientSecret only from the config file -- it has no
-            # OAuth environment variables, no ${VAR} substitution and no
-            # secret-from-file support, so the file has to be assembled at
-            # startup. Reuses the server image rather than pulling a templating
-            # tool, and lets node do the JSON encoding so a secret containing
-            # quotes or backslashes cannot corrupt the file.
-            image:
-              repository: ghcr.io/immich-app/immich-server
-              tag: v3.0.3
-            command:
-              - node
-              - -e
-              - |
-                const fs = require('node:fs');
-                const cfg = JSON.parse(fs.readFileSync('/config-template/immich.json', 'utf8'));
-                cfg.oauth.clientId = process.env.OIDC_CLIENT_ID;
-                cfg.oauth.clientSecret = process.env.OIDC_CLIENT_SECRET;
-                fs.writeFileSync('/config/immich.json', JSON.stringify(cfg, null, 2));
-            env:
-              OIDC_CLIENT_ID:
-                valueFrom:
-                  secretKeyRef:
-                    name: &oidcsecret immich-oidc
-                    key: client_id
-              OIDC_CLIENT_SECRET:
-                valueFrom:
-                  secretKeyRef:
-                    name: *oidcsecret
-                    key: client_secret
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities: {drop: ["ALL"]}
-            resources:
-              requests:
-                cpu: 10m
-              limits:
-                memory: 256Mi
         containers:
           app:
             image:
@@ -60,7 +21,6 @@ spec:
               tag: v3.0.3
             env:
               IMMICH_PORT: &port 2283
-              IMMICH_CONFIG_FILE: /config/immich.json
               IMMICH_MEDIA_LOCATION: /data
               DB_HOSTNAME: postgres-immich-rw.immich.svc.cluster.local
               DB_PORT: "5432"
@@ -133,23 +93,6 @@ spec:
         existingClaim: immich-data
         globalMounts:
           - path: /data
-      # The rendered config, written by init-config and read by the server.
-      config:
-        type: emptyDir
-        advancedMounts:
-          immich:
-            init-config:
-              - path: /config
-            app:
-              - path: /config
-      config-template:
-        type: configMap
-        name: immich-config
-        advancedMounts:
-          immich:
-            init-config:
-              - path: /config-template
-                readOnly: true
     service:
       app:
         ports:

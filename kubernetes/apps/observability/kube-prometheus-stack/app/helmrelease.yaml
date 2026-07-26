@@ -141,6 +141,14 @@ spec:
           check_for_updates: false
           check_for_plugin_updates: false
           reporting_enabled: false
+        auth:
+          # Pocket ID is the only way in through the browser: the username and
+          # password form is gone, so a Grafana-local password cannot be
+          # phished or reused. The admin account still exists and still answers
+          # on the HTTP API over basic auth, which is what the chart uses and
+          # what gets you back in if Pocket ID is ever unreachable. Recovery
+          # otherwise is flipping this back in git.
+          disable_login_form: true
         auth.generic_oauth:
           enabled: true
           name: Pocket ID

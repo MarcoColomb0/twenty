@@ -88,7 +88,11 @@ patches under [`talos/patches/`](./talos/patches).
 
 Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates the client, writes the
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
-rebuilds it identically. Grafana signs in this way.
+rebuilds it identically. Grafana and Immich both sign in this way.
+
+Grafana has no login form at all: Pocket ID is the only way in through a browser, so there is no
+Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
+auth, which is the way back in if Pocket ID is unreachable.
 
 ### Security
 
@@ -98,8 +102,16 @@ rebuilds it identically. Grafana signs in this way.
 | [envoy-proxy-bouncer](https://github.com/kdwils/envoy-proxy-crowdsec-bouncer) | Enforces those bans, as an `ext_authz` check on every request the external gateway serves. |
 
 The agent runs as a DaemonSet and only tails `envoy-external` — the internal gateway serves the LAN,
-which is whitelisted anyway. AppSec runs alongside it as an in-band WAF, combining targeted virtual
-patching with the generic rules and the OWASP core rule set.
+which is whitelisted anyway. That is also why nothing app-specific is acquired: a service published
+through the external gateway is already parsed there, with the real client resolved from
+`X-Forwarded-For`, while a LAN-only service would only ever contribute private addresses. Immich is
+the worked example — the hub has a `gauth-fr/immich` collection, but Immich answers on the internal
+gateway and its share links arrive via a proxy, so its own logs would show either a whitelisted LAN
+address or the proxy's pod IP. `immich-public-proxy` needs no collection of its own for the same
+reason: it sits behind `envoy-external` and is parsed there already.
+
+AppSec runs alongside it as an in-band WAF, combining targeted virtual patching with the generic
+rules and the OWASP core rule set.
 
 Two things keep this from locking the house from the inside. `crowdsecurity/whitelists` drops RFC1918
 in the parsing pipeline, and because split DNS resolves the cluster domain straight to the
@@ -137,7 +149,7 @@ able to fetch the badges on this page.
 | App | Purpose |
 |---|---|
 | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
-| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only, signs in through Pocket ID, and transcodes on the iGPU. |
+| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only, signs in through Pocket ID, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
