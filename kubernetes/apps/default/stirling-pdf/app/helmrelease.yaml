@@ -23,9 +23,11 @@ spec:
               # Everything happens in the browser session; nothing is kept, so
               # there is no login and no account database to look after.
               SECURITY_ENABLELOGIN: "false"
-              # The JVM sizes its heap from the cgroup limit, so this has to
-              # track the memory limit below rather than being left to default.
-              JAVA_OPTS: -XX:MaxRAMPercentage=70
+              # MaxRAMPercentage governs the heap only. Metaspace is allocated
+              # outside it, and at a 1Gi limit the container died with
+              # java.lang.OutOfMemoryError: Metaspace before finishing startup,
+              # so the heap is capped well below the limit to leave room for it.
+              JAVA_OPTS: -XX:MaxRAMPercentage=55 -XX:MaxMetaspaceSize=384m
             probes:
               liveness: &probes
                 enabled: true
@@ -57,9 +59,9 @@ spec:
             resources:
               requests:
                 cpu: 50m
-                memory: 512Mi
+                memory: 768Mi
               limits:
-                memory: 1Gi
+                memory: 2Gi
     defaultPodOptions:
       securityContext:
         # The image's entrypoint writes into /usr/local/bin and chowns its own

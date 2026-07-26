@@ -132,6 +132,11 @@ spec:
           karakeep:
             meilisearch:
               - path: /meili_data
+                # A subdirectory, because the root of a fresh ext4 volume is not
+                # empty -- it has lost+found, and Meilisearch reads that as an
+                # existing database it cannot place:
+                #   failed to infer the version of the database
+                subPath: data
       # Chrome writes far more to /tmp than the default 64MiB shared memory
       # allows, which is also why --disable-dev-shm-usage is set above.
       tmp:
