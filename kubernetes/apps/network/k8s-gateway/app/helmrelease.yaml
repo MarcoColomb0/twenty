@@ -27,9 +27,24 @@ spec:
     # come back NXDOMAIN instead of their real answer.
     fallthrough:
       enabled: true
+    # Setting this replaces the chart's whole default list rather than adding to
+    # it, so every plugin has to be repeated. Dropping "ready" alone takes the
+    # /ready endpoint with it, the readiness probe never passes, and the
+    # LoadBalancer quietly loses its only endpoint -- which takes LAN DNS down.
     extraZonePlugins:
-      # Straight to a public resolver on purpose. Forwarding to /etc/resolv.conf
-      # would point back at CoreDNS, which forwards this domain here, and the
-      # query would loop.
+      - name: log
+      - name: errors
+      - name: health
+        configBlock: |-
+          lameduck 5s
+      - name: ready
+      - name: prometheus
+        parameters: 0.0.0.0:9153
+      # The one real change: the default here is /etc/resolv.conf, which points
+      # at CoreDNS, which now forwards this domain back to this pod. Unknown
+      # names would loop, so fallthrough goes straight to a public resolver.
       - name: forward
         parameters: . 1.1.1.1 1.0.0.1
+      - name: loop
+      - name: reload
+      - name: loadbalance
