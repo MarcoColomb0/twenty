@@ -21,7 +21,7 @@ data:
         "enabled": false
       },
       "ffmpeg": {
-        "accel": "quicksync",
+        "accel": "qsv",
         "accelDecode": true,
         "preferredHwDevice": "/dev/dri/renderD128",
         "targetVideoCodec": "h264",
