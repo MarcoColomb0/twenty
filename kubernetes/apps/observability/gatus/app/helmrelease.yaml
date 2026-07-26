@@ -1,0 +1,51 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gatus
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: gatus
+  interval: 1h
+  values:
+    gatus:
+      env:
+        TZ: Europe/Rome
+    sidecar:
+      kinds:
+        # Every HTTPRoute becomes an endpoint without being named here, which is
+        # the point: a new app is monitored as soon as it is routed. Opt a route
+        # out with gatus.home-operations.com/enabled: "false".
+        httproute:
+          enable: true
+          auto: true
+        # Off deliberately. Services would duplicate everything already covered
+        # by its route, and would also pull in things with no HTTP surface.
+        service:
+          enable: false
+    config:
+      existingConfigMap: gatus-config
+      items:
+        - key: config.yaml
+          path: config.yaml
+    monitoring:
+      serviceMonitor:
+        enabled: true
+    httpRoute:
+      enabled: true
+      annotations:
+        # Do not monitor the status page with itself.
+        gatus.home-operations.com/enabled: "false"
+      hostnames:
+        - "status.${SECRET_DOMAIN}"
+      parentRefs:
+        - name: envoy-internal
+          namespace: network
+          sectionName: https
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi

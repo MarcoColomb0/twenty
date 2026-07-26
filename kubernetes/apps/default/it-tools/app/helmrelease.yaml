@@ -1,0 +1,72 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: it-tools
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: it-tools
+  interval: 1h
+  values:
+    controllers:
+      it-tools:
+        strategy: RollingUpdate
+        containers:
+          app:
+            image:
+              repository: ghcr.io/corentinth/it-tools
+              tag: 2024.10.22-7ca5933
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: &port 80
+                  initialDelaySeconds: 5
+                  periodSeconds: 20
+                  failureThreshold: 3
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 64Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: false
+    persistence:
+      # nginx wants to write its pid, cache and temp dirs, and the image runs
+      # as root. Everything served is baked into the image, so the writable
+      # paths can be thrown away with the pod.
+      cache:
+        type: emptyDir
+        globalMounts:
+          - path: /var/cache/nginx
+      run:
+        type: emptyDir
+        globalMounts:
+          - path: /var/run
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "it-tools.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

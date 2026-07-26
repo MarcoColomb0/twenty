@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatus-config
+data:
+  # The sidecar writes discovered endpoints into the same directory as separate
+  # files, so this holds only the base configuration. Anything listed here would
+  # otherwise have to be maintained by hand for every service.
+  config.yaml: |-
+    # Matches gatus.port in the HelmRelease. Written literally rather than as
+    # ${GATUS_WEB_PORT}: Flux substitutes ${...} across the whole manifest,
+    # ConfigMap contents included, and an undefined variable would blank it.
+    web:
+      port: 8080
+    # No PVC: endpoints are regenerated from the cluster on every start, and
+    # history is not worth a ReadWriteOnce volume that pins the pod to a node.
+    storage:
+      type: memory
+    ui:
+      title: twenty
+      header: twenty
+    metrics: true

@@ -1,0 +1,49 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage-config
+data:
+  kubernetes.yaml: |
+    # Reads the API through the pod's ServiceAccount rather than a kubeconfig.
+    mode: cluster
+    # This cluster has no Ingress objects at all, so Gateway API discovery is
+    # the only source that finds anything.
+    gateway: true
+    ingress: false
+  settings.yaml: |
+    title: twenty
+    headerStyle: clean
+    layout:
+      Infrastructure:
+        style: row
+        columns: 3
+      Applications:
+        style: row
+        columns: 3
+  # Deliberately empty. Entries come from gethomepage.dev annotations on each
+  # app's HTTPRoute, so a new service appears here by being deployed rather than
+  # by being listed twice.
+  services.yaml: |
+    []
+  widgets.yaml: |
+    - resources:
+        cpu: true
+        memory: true
+        disk: /
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: twenty
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+  bookmarks.yaml: |
+    []
+  docker.yaml: |-
+    {}
