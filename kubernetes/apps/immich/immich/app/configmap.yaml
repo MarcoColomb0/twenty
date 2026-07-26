@@ -12,6 +12,17 @@ data:
   # Note that IMMICH_CONFIG_FILE makes the whole admin settings page read-only:
   # Immich refuses with "Cannot update configuration while IMMICH_CONFIG_FILE
   # is in use". Every setting worth changing has to be changed here.
+  #
+  # This is JSON, so it takes no comments of its own -- anything worth saying
+  # about a value has to be said up here.
+  #
+  # ffmpeg.accel stays disabled even though twenty-hp01 has a usable iGPU.
+  # hostPath makes /dev/dri/renderD128 visible at mode 0666, but the cgroup
+  # device controller still denies char device 226:128: opening it returns
+  # EPERM, and vainfo reports "Failed to open the given device". Reaching it
+  # needs a privileged container or the Intel GPU device plugin, so this stays
+  # on software encoding rather than a value that only fails once someone
+  # uploads a video.
   immich.json: |-
     {
       "machineLearning": {
@@ -21,9 +32,8 @@ data:
         "enabled": false
       },
       "ffmpeg": {
-        "accel": "qsv",
+        "accel": "disabled",
         "accelDecode": true,
-        "preferredHwDevice": "/dev/dri/renderD128",
         "targetVideoCodec": "h264",
         "targetResolution": "1080",
         "preset": "medium"
