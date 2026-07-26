@@ -76,6 +76,8 @@ patches under [`talos/patches/`](./talos/patches).
 | [Blocky](https://github.com/0xERR0R/blocky) | The LAN's resolver. Forwards the cluster domain to k8s-gateway, everything else upstream over DNS-over-TLS, and blocks ads on the way. |
 | [cloudflared](https://github.com/cloudflare/cloudflared) | Tunnel for public traffic — no ports forwarded on the router. |
 | [Reloader](https://github.com/stakater/Reloader) | Restarts workloads when their ConfigMaps or Secrets change. |
+| [Spegel](https://spegel.dev) | Peer-to-peer image mirror. Nodes pull layers from each other over the LAN, so only the first pull of an image leaves the network. |
+| [Intel device plugins](https://github.com/intel/intel-device-plugins-for-kubernetes) | Advertises `twenty-hp01`'s iGPU as `gpu.intel.com/i915`, which is what lets Immich transcode on Quick Sync. A `hostPath` mount is not enough: it shows the render node to the container but never grants the device cgroup entry. |
 
 ### Identity
 
@@ -135,7 +137,7 @@ able to fetch the badges on this page.
 | App | Purpose |
 |---|---|
 | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
-| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only. |
+| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only, signs in through Pocket ID, and transcodes on the iGPU. |
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
