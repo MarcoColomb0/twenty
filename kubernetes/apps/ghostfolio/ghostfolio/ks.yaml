@@ -5,10 +5,13 @@ metadata:
   name: ghostfolio
 spec:
   dependsOn:
+    # CNPG publishes postgres-ghostfolio-app next to the Cluster, and the
+    # deployment reads DATABASE_URL straight out of it. Both now live here, so
+    # no copy of that Secret has to be kept in sync by hand.
     - name: ghostfolio-db
-      namespace: database
+      namespace: ghostfolio
   interval: 1h
-  path: ./kubernetes/apps/default/ghostfolio/app
+  path: ./kubernetes/apps/ghostfolio/ghostfolio/app
   postBuild:
     substituteFrom:
       - name: cluster-secrets
@@ -18,5 +21,5 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: default
+  targetNamespace: ghostfolio
   wait: false

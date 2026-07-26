@@ -6,9 +6,11 @@ metadata:
 spec:
   dependsOn:
     - name: cloudnative-pg
+      namespace: database
     - name: dragonfly-operator
+      namespace: database
   interval: 1h
-  path: ./kubernetes/apps/database/ghostfolio-db/app
+  path: ./kubernetes/apps/ghostfolio/ghostfolio-db/app
   postBuild:
     substituteFrom:
       - name: cluster-secrets
@@ -18,5 +20,5 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: database
+  targetNamespace: ghostfolio
   wait: true

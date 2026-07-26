@@ -197,7 +197,11 @@ kubernetes/apps/<namespace>/<app>/
 ```
 
 Namespaces map to directories under `kubernetes/apps/`: `cert-manager`, `database`, `default`,
-`flux-system`, `kube-system`, `network`, `observability`, `security`, `storage`.
+`flux-system`, `ghostfolio`, `kube-system`, `network`, `observability`, `security`, `storage`.
+
+An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
+publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting
+the two means copying a generated credential by hand and watching it drift.
 
 Secrets are committed encrypted with SOPS and age, and decrypted in-cluster by Flux. Files matching
 `*.sops.yaml` are never readable in this repository — **this repository is public**, so every value
