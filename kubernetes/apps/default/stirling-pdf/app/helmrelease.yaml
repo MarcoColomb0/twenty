@@ -41,7 +41,19 @@ spec:
               readiness: *probes
             securityContext:
               allowPrivilegeEscalation: false
-              capabilities: {drop: ["ALL"]}
+              capabilities:
+                drop:
+                  - "ALL"
+                # Its init script chowns /tmp/stirling-pdf and symlinks helpers
+                # into /usr/local/bin before the app starts. Without CHOWN it
+                # exits with "chown: changing ownership of '/tmp/stirling-pdf':
+                # Operation not permitted".
+                add:
+                  - "CHOWN"
+                  - "DAC_OVERRIDE"
+                  - "FOWNER"
+                  - "SETUID"
+                  - "SETGID"
             resources:
               requests:
                 cpu: 50m
@@ -50,9 +62,10 @@ spec:
                 memory: 1Gi
     defaultPodOptions:
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        # The image's entrypoint writes into /usr/local/bin and chowns its own
+        # temp directory, so it has to start as root. fsGroup still hands it the
+        # config volume without a chown of its own.
+        runAsNonRoot: false
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
     persistence:
