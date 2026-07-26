@@ -40,19 +40,12 @@ spec:
                 memory: 64Mi
     defaultPodOptions:
       securityContext:
+        # nginx starts as root and drops to its own user. No emptyDir is mounted
+        # over /var/cache/nginx: the entrypoint chowns that directory, and with
+        # every capability dropped the chown fails with "Operation not
+        # permitted". The image's own filesystem is writable and everything
+        # served is baked into it.
         runAsNonRoot: false
-    persistence:
-      # nginx wants to write its pid, cache and temp dirs, and the image runs
-      # as root. Everything served is baked into the image, so the writable
-      # paths can be thrown away with the pod.
-      cache:
-        type: emptyDir
-        globalMounts:
-          - path: /var/cache/nginx
-      run:
-        type: emptyDir
-        globalMounts:
-          - path: /var/run
     service:
       app:
         ports:

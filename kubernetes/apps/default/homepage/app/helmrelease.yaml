@@ -34,6 +34,13 @@ spec:
                   httpGet:
                     path: /api/healthcheck
                     port: &port 3000
+                    # Homepage validates the Host header against
+                    # HOMEPAGE_ALLOWED_HOSTS and rejects anything else. A probe
+                    # addresses the pod by IP, which will never be in that list,
+                    # so it has to present the name the app answers to.
+                    httpHeaders:
+                      - name: Host
+                        value: "home.${SECRET_DOMAIN}"
                   initialDelaySeconds: 10
                   periodSeconds: 20
                   failureThreshold: 5
