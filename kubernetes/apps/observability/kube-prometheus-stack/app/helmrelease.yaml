@@ -111,11 +111,18 @@ spec:
               resources:
                 requests:
                   storage: 2Gi
+        # The memory request is stated rather than left out. Omitting it does
+        # not mean "no request": prometheus-operator fills in its own default of
+        # 200Mi, which was larger than the 128Mi limit here, so the StatefulSet
+        # was rejected outright and Alertmanager never ran at all --
+        #   resources.requests: Invalid value: "200Mi": must be less than or
+        #   equal to memory limit of 128Mi
         resources:
           requests:
             cpu: 10m
-          limits:
             memory: 128Mi
+          limits:
+            memory: 256Mi
 
     grafana:
       admin:
