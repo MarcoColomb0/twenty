@@ -77,7 +77,10 @@ spec:
         ruleSelectorNilUsesHelmValues: false
         scrapeConfigSelectorNilUsesHelmValues: false
         serviceMonitorSelectorNilUsesHelmValues: false
-        retention: 14d
+        # 14d of samples was heading for roughly 10GiB on a 20Gi volume that
+        # Longhorn replicates twice. retentionSize stays as the backstop; it
+        # sits above what 5d can produce, so time is what actually governs.
+        retention: 5d
         retentionSize: 18GB
         walCompression: true
         storageSpec:
