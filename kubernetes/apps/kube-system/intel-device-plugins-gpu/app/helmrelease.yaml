@@ -14,13 +14,13 @@ spec:
     # Discovery CRD. NFD is not installed here, so the manifest would fail to
     # apply on an unknown kind.
     nodeFeatureRule: false
-    # Without NFD there is no intel.feature.node.kubernetes.io/gpu label to
-    # select on. Talos does label nodes by installed extension, but the value is
-    # a version string rather than "true", so it cannot be matched by equality.
-    # Pinned by hostname until the Proxmox VMs are replaced with bare metal that
-    # has an iGPU; at that point this becomes a shared node label.
-    nodeSelector:
-      kubernetes.io/hostname: twenty-hp01
+    # nodeSelector is deliberately left at the chart default of
+    # intel.feature.node.kubernetes.io/gpu=true. Helm merges maps rather than
+    # replacing them, so adding a hostname here would not remove that key -- it
+    # produced a selector requiring both, matching nothing, and the DaemonSet
+    # sat at DESIRED=0. The label is set instead by machine.nodeLabels on
+    # twenty-hp01 in talconfig.yaml, which is what NFD would have done. A future
+    # node with an iGPU gets the plugin by carrying the same label.
     # One container at a time may hold the GPU. Raising this shares the render
     # node between pods, which is not wanted while Immich is its only consumer.
     sharedDevNum: 1

@@ -63,6 +63,10 @@ nodes:
 
   - hostname: "twenty-hp01"
     ipAddress: "192.168.100.202"
+    nodeLabels:
+      # What Node Feature Discovery would set. The Intel GPU device plugin
+      # selects on it, and this is the only node with an iGPU.
+      intel.feature.node.kubernetes.io/gpu: "true"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
