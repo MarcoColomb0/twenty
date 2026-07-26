@@ -47,7 +47,17 @@ spec:
               readiness: *probes
             securityContext:
               allowPrivilegeEscalation: false
-              capabilities: {drop: ["ALL"]}
+              capabilities:
+                drop:
+                  - "ALL"
+                # What s6-overlay's preinit needs to take ownership of /run
+                # before handing off to the app as an unprivileged user.
+                add:
+                  - "CHOWN"
+                  - "DAC_OVERRIDE"
+                  - "FOWNER"
+                  - "SETUID"
+                  - "SETGID"
             resources:
               requests:
                 cpu: 50m
@@ -99,9 +109,14 @@ spec:
                 memory: 768Mi
     defaultPodOptions:
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        # Karakeep's image is built on s6-overlay, which starts as root, fixes
+        # up /run and then drops privileges itself. Forcing uid 1000 stops it
+        # before the app runs:
+        #   /run belongs to uid 0 instead of 1000, has insecure and/or
+        #   unworkable permissions, and we're lacking the privileges to fix it
+        # Each image is left to pick its own user; fsGroup still hands the pod
+        # its volumes.
+        runAsNonRoot: false
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
     persistence:
