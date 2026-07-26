@@ -9,8 +9,9 @@ data:
   # otherwise have to be maintained by hand for every service.
   config.yaml: |-
     # Matches gatus.port in the HelmRelease. Written literally rather than as
-    # ${GATUS_WEB_PORT}: Flux substitutes ${...} across the whole manifest,
-    # ConfigMap contents included, and an undefined variable would blank it.
+    # the GATUS_WEB_PORT variable Gatus would expand: Flux rewrites that syntax
+    # across the whole manifest, ConfigMap contents included, and a variable it
+    # does not know becomes an empty string.
     web:
       port: 8080
     # No PVC: endpoints are regenerated from the cluster on every start, and
