@@ -18,4 +18,18 @@ spec:
       annotations:
         lbipam.cilium.io/ips: "192.168.100.103"
       externalTrafficPolicy: Cluster
-    watchedResources: ["HTTPRoute", "Service"]
+    watchedResources:
+      - "HTTPRoute"
+      - "Service"
+    # CoreDNS now sends the whole cluster domain here, so this has to answer for
+    # names that are not backed by a route as well -- public records like the
+    # tunnel target, or the ACME challenge TXT. Without fallthrough those would
+    # come back NXDOMAIN instead of their real answer.
+    fallthrough:
+      enabled: true
+    extraZonePlugins:
+      # Straight to a public resolver on purpose. Forwarding to /etc/resolv.conf
+      # would point back at CoreDNS, which forwards this domain here, and the
+      # query would loop.
+      - name: forward
+        parameters: . 1.1.1.1 1.0.0.1

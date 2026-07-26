@@ -3,8 +3,16 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: github-webhook
+  annotations:
+    # A receiver, not a page: it answers 404 to the GET a probe makes, and only
+    # accepts POSTs under /hook/. Reaching it at all is what is worth knowing,
+    # so 404 is the healthy answer here.
+    gatus.home-operations.com/endpoint: |
+      conditions:
+        - "[STATUS] == 404"
 spec:
-  hostnames: ["flux-webhook.${SECRET_DOMAIN}"]
+  hostnames:
+    - "flux-webhook.${SECRET_DOMAIN}"
   parentRefs:
     - name: envoy-external
       namespace: network

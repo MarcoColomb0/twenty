@@ -20,6 +20,22 @@ spec:
       clusterIP: "10.43.0.10"
     replicaCount: 2
     servers:
+      # Cluster workloads could not resolve the cluster's own hostnames: the
+      # only forwarder was /etc/resolv.conf, which knows the public records but
+      # not the internal-gateway ones, so anything on envoy-internal came back
+      # "no such host" from inside a pod. k8s-gateway is authoritative for these
+      # names and falls through to public DNS for the rest.
+      - zones:
+          - zone: ${SECRET_DOMAIN}
+            scheme: dns://
+            use_tcp: true
+        port: 53
+        plugins:
+          - name: errors
+          - name: cache
+            parameters: 30
+          - name: forward
+            parameters: . 192.168.100.103
       - zones:
           - zone: .
             scheme: dns://

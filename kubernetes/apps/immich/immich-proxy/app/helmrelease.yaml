@@ -62,6 +62,12 @@ spec:
             port: *port
     route:
       app:
+        annotations:
+          # / is deliberately 404 here -- showHomePage is off so a visitor to
+          # the bare hostname learns nothing. Probe the health path instead, or
+          # the status page reports the proxy down while it is working.
+          gatus.home-operations.com/endpoint: |
+            path: /share/healthcheck
         hostnames:
           - "photos.${SECRET_DOMAIN}"
         parentRefs:
