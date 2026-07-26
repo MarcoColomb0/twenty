@@ -31,7 +31,19 @@ spec:
               readiness: *probes
             securityContext:
               allowPrivilegeEscalation: false
-              capabilities: {drop: ["ALL"]}
+              capabilities:
+                drop:
+                  - "ALL"
+                # nginx's entrypoint chowns its cache directories and then drops
+                # from root to its own user, so it needs these three back.
+                # Without CHOWN it exits at startup with
+                # chown("/var/cache/nginx/client_temp", 101) failed
+                # (1: Operation not permitted). This is the whole reason the
+                # container cannot simply run unprivileged.
+                add:
+                  - "CHOWN"
+                  - "SETUID"
+                  - "SETGID"
             resources:
               requests:
                 cpu: 10m
@@ -40,11 +52,9 @@ spec:
                 memory: 64Mi
     defaultPodOptions:
       securityContext:
-        # nginx starts as root and drops to its own user. No emptyDir is mounted
-        # over /var/cache/nginx: the entrypoint chowns that directory, and with
-        # every capability dropped the chown fails with "Operation not
-        # permitted". The image's own filesystem is writable and everything
-        # served is baked into it.
+        # nginx starts as root and drops to its own user, so this cannot be
+        # true. Everything served is baked into the image and its filesystem is
+        # writable, so no volume is needed either.
         runAsNonRoot: false
     service:
       app:
