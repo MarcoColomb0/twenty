@@ -7,7 +7,12 @@ metadata:
 spec:
   replicas: 1
   args:
-    - --proactor_threads=2
+    # Dragonfly demands 256MiB per proactor thread and refuses to start
+    # otherwise: two threads under a 512Mi limit leaves it 409.6MiB of
+    # maxmemory and it exits with "There are 2 threads, so 512.00MiB are
+    # required". One thread is ample here -- Immich uses Redis as a job queue,
+    # not as a data store.
+    - --proactor_threads=1
     - --default_lua_flags=allow-undeclared-keys
     - --cluster_mode=emulated
   resources:
