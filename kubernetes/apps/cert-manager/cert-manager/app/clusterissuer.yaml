@@ -7,7 +7,17 @@ spec:
   acme:
     privateKeySecretRef:
       name: letsencrypt-production
-    profile: shortlived
+    # "shortlived" issues 6-day certificates from Let's Encrypt's new hierarchy:
+    # leaf -> YE1 -> ISRG Root YE, reaching a trusted anchor only through two
+    # cross-signs added in May 2026. Current operating system trust stores cope,
+    # but clients that ship their own -- Firefox on Android among them -- reject
+    # it as an unknown issuer. On the LAN that is not academic: split DNS points
+    # the cluster domain at Envoy, so a phone gets this certificate rather than
+    # Cloudflare's, and HSTS makes the failure impossible to click past.
+    #
+    # "classic" is the 90-day profile off the long-established ISRG Root X1
+    # chain, which every client already trusts.
+    profile: classic
     server: https://acme-v02.api.letsencrypt.org/directory
     solvers:
       - dns01:
@@ -16,4 +26,5 @@ spec:
               name: cert-manager-secret
               key: api-token
         selector:
-          dnsZones: ["${SECRET_DOMAIN}"]
+          dnsZones:
+            - "${SECRET_DOMAIN}"
