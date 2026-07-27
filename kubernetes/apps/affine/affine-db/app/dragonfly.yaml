@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/dragonflydb.io/dragonfly_v1alpha1.json
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: affine-dragonfly
+spec:
+  replicas: 1
+  args:
+    # One thread: Dragonfly reserves 256MiB per proactor and refuses to start if
+    # the limit cannot cover them all. AFFiNE uses this as a cache, not a store.
+    - --proactor_threads=1
+    - --default_lua_flags=allow-undeclared-keys
+    - --cluster_mode=emulated
+  resources:
+    requests:
+      cpu: 50m
+    limits:
+      memory: 512Mi

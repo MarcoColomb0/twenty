@@ -159,6 +159,7 @@ fetch the badges on this page.
 | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
 | [Stirling PDF](https://github.com/Stirling-Tools/Stirling-PDF) | PDF editing — merge, split, convert, sign. Uploads go to an `emptyDir` and leave with the pod; only settings are kept. |
 | [Karakeep](https://karakeep.app) | Bookmark and read-later archive. Runs its crawler and search index as sidecars reached over localhost, so neither is on the cluster network. |
+| [AFFiNE](https://affine.pro) | Notes and whiteboards, backed by CloudNativePG and Dragonfly. Its schema migration runs as an init container, which is how upstream orders it too. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
 ## Networking
@@ -220,8 +221,8 @@ kubernetes/apps/<namespace>/<app>/
     └── helmrelease.yaml
 ```
 
-Namespaces map to directories under `kubernetes/apps/`: `cert-manager`, `database`, `default`,
-`flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `network`, `observability`, `security`, `storage`.
+Namespaces map to directories under `kubernetes/apps/`:
+`affine`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `network`, `observability`, `security`, `storage`.
 
 An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
 publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting

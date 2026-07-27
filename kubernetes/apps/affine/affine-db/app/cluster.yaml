@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/postgresql.cnpg.io/cluster_v1.json
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-affine
+spec:
+  instances: 2
+  # Upstream runs AFFiNE on pgvector/pgvector, so the stock CloudNativePG image
+  # is not enough. This is the same image Immich's cluster uses -- VectorChord
+  # ships pgvector alongside it, so no second variant is needed.
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.0-0.5.3
+  storage:
+    size: 10Gi
+    storageClass: longhorn
+  bootstrap:
+    initdb:
+      database: affine
+      owner: affine
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS "vector";
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
