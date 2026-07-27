@@ -113,6 +113,13 @@ spec:
             port: *port
     route:
       app:
+        annotations:
+          # 401 is the healthy answer now that login is required: an
+          # unauthenticated probe getting anything else would mean the app is
+          # serving without asking who is knocking.
+          gatus.home-operations.com/endpoint: |
+            conditions:
+              - "[STATUS] == 401"
         hostnames:
           - "pdf.${SECRET_DOMAIN}"
         parentRefs:
