@@ -159,6 +159,7 @@ fetch the badges on this page.
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
 | [Karakeep](https://karakeep.app) | Bookmark and read-later archive. Runs its crawler and search index as sidecars reached over localhost, so neither is on the cluster network. |
+| [Actual Budget](https://actualbudget.org) | Budgeting. SQLite-backed, so no database cluster of its own. Pocket ID is enforced as the only way in — there is no server password to fall back to. |
 | [AFFiNE](https://affine.pro) | Notes and whiteboards, backed by CloudNativePG and Dragonfly. Its schema migration runs as an init container, which is how upstream orders it too. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
@@ -222,7 +223,7 @@ kubernetes/apps/<namespace>/<app>/
 ```
 
 Namespaces map to directories under `kubernetes/apps/`:
-`affine`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `network`, `observability`, `security`, `storage`.
+`actual`, `affine`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `network`, `observability`, `security`, `storage`.
 
 An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
 publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting
