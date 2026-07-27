@@ -88,7 +88,7 @@ patches under [`talos/patches/`](./talos/patches).
 
 Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates the client, writes the
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
-rebuilds it identically. Grafana and Immich both sign in this way.
+rebuilds it identically. Grafana, Immich, Karakeep, Stirling PDF and AFFiNE all sign in this way.
 
 Grafana has no login form at all: Pocket ID is the only way in through a browser, so there is no
 Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic

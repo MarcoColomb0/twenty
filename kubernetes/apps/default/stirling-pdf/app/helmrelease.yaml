@@ -20,9 +20,29 @@ spec:
             env:
               DISABLE_ADDITIONAL_FEATURES: "false"
               SYSTEM_DEFAULTLOCALE: en-GB
-              # Everything happens in the browser session; nothing is kept, so
-              # there is no login and no account database to look after.
-              SECURITY_ENABLELOGIN: "false"
+              # Login is on now that Pocket ID backs it. oauth2 as the only
+              # method means there is no local password to manage or leak --
+              # "all" would keep the username and password form alongside it.
+              SECURITY_ENABLELOGIN: "true"
+              SECURITY_LOGINMETHOD: oauth2
+              SECURITY_OAUTH2_ENABLED: "true"
+              SECURITY_OAUTH2_AUTOCREATEUSER: "true"
+              # Stirling's generic OIDC slot is named after Keycloak, but it is
+              # an ordinary discovery-based client and Pocket ID sits in it
+              # unchanged.
+              SECURITY_OAUTH2_CLIENT_KEYCLOAK_ISSUER: https://id.${SECRET_DOMAIN}
+              SECURITY_OAUTH2_CLIENT_KEYCLOAK_SCOPES: openid, profile, email
+              SECURITY_OAUTH2_CLIENT_KEYCLOAK_USEASUSERNAME: preferred_username
+              SECURITY_OAUTH2_CLIENT_KEYCLOAK_CLIENTID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc stirling-pdf-oidc
+                    key: client_id
+              SECURITY_OAUTH2_CLIENT_KEYCLOAK_CLIENTSECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
               # MaxRAMPercentage governs the heap only. Metaspace is allocated
               # outside it, and at a 1Gi limit the container died with
               # java.lang.OutOfMemoryError: Metaspace before finishing startup,
