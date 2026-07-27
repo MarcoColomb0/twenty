@@ -5,3 +5,4 @@ resources:
   - ./configmap.yaml
   - ./helmrelease.yaml
   - ./ocirepository.yaml
+  - ./oidcclient.yaml

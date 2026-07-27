@@ -29,9 +29,12 @@ spec:
               BROWSER_WEB_URL: http://localhost:9222
               NEXTAUTH_URL: https://karakeep.${SECRET_DOMAIN}
               DISABLE_NEW_RELEASE_CHECK: "true"
-              # Pocket ID is the only way in: signups are closed, so an account
-              # exists because the identity provider vouched for it.
-              DISABLE_SIGNUPS: "true"
+              # DISABLE_SIGNUPS gates OAuth account creation as well as the
+              # local form, so closing it left Pocket ID users with no way to
+              # get an account at all. Signups stay open and password auth is
+              # what is turned off instead -- Pocket ID decides who may sign in,
+              # and an account exists because it vouched for them.
+              DISABLE_PASSWORD_AUTH: "true"
               OAUTH_WELLKNOWN_URL: https://id.${SECRET_DOMAIN}/.well-known/openid-configuration
               OAUTH_PROVIDER_NAME: Pocket ID
               OAUTH_SCOPE: openid email profile
@@ -176,7 +179,7 @@ spec:
         hostnames:
           - "karakeep.${SECRET_DOMAIN}"
         parentRefs:
-          - name: envoy-internal
+          - name: envoy-external
             namespace: network
             sectionName: https
         rules:

@@ -20,34 +20,19 @@ spec:
             env:
               DISABLE_ADDITIONAL_FEATURES: "false"
               SYSTEM_DEFAULTLOCALE: en-GB
-              # Login is on now that Pocket ID backs it. oauth2 as the only
-              # method means there is no local password to manage or leak --
-              # "all" would keep the username and password form alongside it.
+              # Pocket ID cannot be used here. Stirling gates OAuth user
+              # auto-creation behind a paid licence and refuses the login:
+              #   User NOT eligible for OAuth: no paid license and not
+              #   grandfathered
+              # Only users that predate the policy change are exempt, and a
+              # fresh install has none. So this is a local account, with its
+              # password generated and held in SOPS.
               SECURITY_ENABLELOGIN: "true"
-              SECURITY_LOGINMETHOD: oauth2
-              SECURITY_OAUTH2_ENABLED: "true"
-              SECURITY_OAUTH2_AUTOCREATEUSER: "true"
-              # Stirling's generic OIDC slot is named after Keycloak, but it is
-              # an ordinary discovery-based client and Pocket ID sits in it
-              # unchanged.
-              SECURITY_OAUTH2_CLIENT_KEYCLOAK_ISSUER: https://id.${SECRET_DOMAIN}
-              SECURITY_OAUTH2_CLIENT_KEYCLOAK_SCOPES: openid, profile, email
-              SECURITY_OAUTH2_CLIENT_KEYCLOAK_USEASUSERNAME: preferred_username
-              SECURITY_OAUTH2_CLIENT_KEYCLOAK_CLIENTID:
-                valueFrom:
-                  secretKeyRef:
-                    name: &oidc stirling-pdf-oidc
-                    key: client_id
-              SECURITY_OAUTH2_CLIENT_KEYCLOAK_CLIENTSECRET:
-                valueFrom:
-                  secretKeyRef:
-                    name: *oidc
-                    key: client_secret
-              # MaxRAMPercentage governs the heap only. Metaspace is allocated
-              # outside it, and at a 1Gi limit the container died with
-              # java.lang.OutOfMemoryError: Metaspace before finishing startup,
-              # so the heap is capped well below the limit to leave room for it.
-              JAVA_OPTS: -XX:MaxRAMPercentage=55 -XX:MaxMetaspaceSize=384m
+              SECURITY_LOGINMETHOD: normal
+              SECURITY_OAUTH2_ENABLED: "false"
+            envFrom:
+              - secretRef:
+                  name: stirling-pdf-secret
             probes:
               liveness: &probes
                 enabled: true

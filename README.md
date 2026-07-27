@@ -88,7 +88,10 @@ patches under [`talos/patches/`](./talos/patches).
 
 Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates the client, writes the
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
-rebuilds it identically. Grafana, Immich, Karakeep, Stirling PDF and AFFiNE all sign in this way.
+rebuilds it identically. Grafana, Immich, Karakeep, AFFiNE and Gatus all sign in this way.
+
+Stirling PDF is the exception: it gates OAuth user auto-creation behind a paid licence and refuses
+the login outright, so it keeps a local account and stays on the internal gateway.
 
 Grafana has no login form at all: Pocket ID is the only way in through a browser, so there is no
 Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
@@ -154,7 +157,7 @@ fetch the badges on this page.
 | App | Purpose |
 |---|---|
 | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
-| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Reachable on the internal gateway only, signs in through Pocket ID, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
+| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Internal gateway only, Pocket ID with no password login at all, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
 | [Stirling PDF](https://github.com/Stirling-Tools/Stirling-PDF) | PDF editing — merge, split, convert, sign. Uploads go to an `emptyDir` and leave with the pod; only settings are kept. |

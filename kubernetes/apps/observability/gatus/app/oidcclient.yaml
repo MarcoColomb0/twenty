@@ -1,0 +1,20 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: gatus
+spec:
+  callbackUrls:
+    # Gatus requires this exact suffix.
+    - https://status.${SECRET_DOMAIN}/authorization-code/callback
+  logoutCallbackUrls:
+    - https://status.${SECRET_DOMAIN}
+  pkceEnabled: true
+  skipConsent: true
+  secret:
+    name: gatus-oidc
+    # Named for the environment variables the config expands, because envFrom
+    # imports a Secret's keys verbatim.
+    keys:
+      clientID: GATUS_OIDC_CLIENT_ID
+      clientSecret: GATUS_OIDC_CLIENT_SECRET

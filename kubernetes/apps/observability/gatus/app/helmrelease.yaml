@@ -12,6 +12,9 @@ spec:
     gatus:
       env:
         TZ: Europe/Rome
+      envFrom:
+        - secretRef:
+            name: gatus-oidc
     sidecar:
       kinds:
         # Every HTTPRoute becomes an endpoint without being named here, which is
@@ -40,7 +43,7 @@ spec:
       hostnames:
         - "status.${SECRET_DOMAIN}"
       parentRefs:
-        - name: envoy-internal
+        - name: envoy-external
           namespace: network
           sectionName: https
     resources:
