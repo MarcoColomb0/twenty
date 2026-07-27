@@ -12,6 +12,11 @@ spec:
     gatus:
       env:
         TZ: Europe/Rome
+        # The config file cannot carry these itself -- substitution is disabled
+        # on that ConfigMap so its ${...} survive for Gatus, which means the
+        # domain has to arrive from here, where Flux still substitutes.
+        GATUS_OIDC_ISSUER_URL: https://id.${SECRET_DOMAIN}
+        GATUS_OIDC_REDIRECT_URL: https://status.${SECRET_DOMAIN}/authorization-code/callback
       envFrom:
         - secretRef:
             name: gatus-oidc

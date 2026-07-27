@@ -3,15 +3,22 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: gatus-config
+  annotations:
+    # Flux rewrites ${...} everywhere, ConfigMap contents included, and its
+    # envsubst rejects the escaped form outright:
+    #   envsubst error: variable substitution failed: unable to parse variable
+    #   name
+    # Substitution is switched off for this object so the ${...} below survive
+    # to be expanded by Gatus from its own environment instead. Everything that
+    # needs the domain is passed in as an environment variable by the
+    # HelmRelease, where substitution still applies.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
 data:
   # The sidecar writes discovered endpoints into the same directory as separate
   # files, so this holds only the base configuration. Anything listed here would
   # otherwise have to be maintained by hand for every service.
   config.yaml: |-
-    # Matches gatus.port in the HelmRelease. Written literally rather than as
-    # the GATUS_WEB_PORT variable Gatus would expand: Flux rewrites that syntax
-    # across the whole manifest, ConfigMap contents included, and a variable it
-    # does not know becomes an empty string.
+    # Matches gatus.port in the HelmRelease.
     web:
       port: 8080
     # No PVC: endpoints are regenerated from the cluster on every start, and
@@ -26,13 +33,10 @@ data:
     # which is exactly what someone probing would like to read. Published, so it
     # asks who is looking first.
     #
-    # The doubled dollar is deliberate: Flux substitutes ${...} across the whole
-    # manifest, so $${...} is what leaves a literal ${...} for Gatus to expand
-    # from its own environment at runtime.
     security:
       oidc:
-        issuer-url: https://id.${SECRET_DOMAIN}
-        redirect-url: https://status.${SECRET_DOMAIN}/authorization-code/callback
-        client-id: $${GATUS_OIDC_CLIENT_ID}
-        client-secret: $${GATUS_OIDC_CLIENT_SECRET}
+        issuer-url: ${GATUS_OIDC_ISSUER_URL}
+        redirect-url: ${GATUS_OIDC_REDIRECT_URL}
+        client-id: ${GATUS_OIDC_CLIENT_ID}
+        client-secret: ${GATUS_OIDC_CLIENT_SECRET}
         scopes: [openid]
