@@ -9,7 +9,12 @@ spec:
     - https://status.${SECRET_DOMAIN}/authorization-code/callback
   logoutCallbackUrls:
     - https://status.${SECRET_DOMAIN}
-  pkceEnabled: true
+  # Gatus does not implement PKCE -- it builds the authorize URL with only state
+  # and nonce, so Pocket ID rejects the request outright:
+  #   This client requires PKCE, but the 'code_challenge' parameter is missing
+  # It is a confidential client holding a real client secret, which is what PKCE
+  # substitutes for in public clients that cannot keep one.
+  pkceEnabled: false
   skipConsent: true
   secret:
     name: gatus-oidc

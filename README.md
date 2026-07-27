@@ -134,6 +134,7 @@ bouncer that is down costs remediation and not the gateway.
 |---|---|
 | [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts) | Prometheus (5d retention on Longhorn), Alertmanager, Grafana, kube-state-metrics, node-exporter. |
 | [Kromgo](https://github.com/home-operations/kromgo) | Turns whitelisted PromQL into the public badges and graphs above. |
+| [ntfy](https://ntfy.sh) | Push notifications. Alertmanager posts here, and ntfy's built-in Alertmanager template renders the payload, so no translating sidecar sits between them. |
 | [Gatus](https://gatus.io) | Uptime checks, and the closest thing here to a service index. Paired with [gatus-sidecar](https://github.com/home-operations/gatus-sidecar), which turns every `HTTPRoute` into an endpoint, so a service is listed and monitored by being routed rather than by being named anywhere. |
 
 Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,

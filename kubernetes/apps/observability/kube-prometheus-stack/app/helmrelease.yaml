@@ -99,7 +99,45 @@ spec:
             memory: 2Gi
 
     alertmanager:
+      # Alerts had nowhere to go: the chart's default routes everything into a
+      # "null" receiver, so the stack evaluated rules and then discarded the
+      # result. That is also why nothing noticed Alertmanager itself being dead
+      # for two days.
+      config:
+        route:
+          receiver: ntfy
+          group_by:
+            - alertname
+            - job
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+          routes:
+            # Watchdog fires constantly by design, as proof the pipeline works.
+            # It is the one alert worth dropping.
+            - receiver: "null"
+              matchers:
+                - alertname = "Watchdog"
+            - receiver: "null"
+              matchers:
+                - severity = "info"
+        receivers:
+          - name: "null"
+          - name: ntfy
+            webhook_configs:
+              # ntfy ships a template for Alertmanager's payload, so no
+              # translating sidecar is needed to make this readable.
+              - url: http://ntfy.observability.svc.cluster.local/alerts?template=alertmanager
+                send_resolved: true
+                http_config:
+                  authorization:
+                    type: Bearer
+                    # Mounted by alertmanagerSpec.secrets below. The token stays
+                    # in SOPS rather than being written into this file.
+                    credentials_file: /etc/alertmanager/secrets/alertmanager-ntfy-token/token
       alertmanagerSpec:
+        secrets:
+          - alertmanager-ntfy-token
         replicas: 1
         retention: 120h
         storage:
