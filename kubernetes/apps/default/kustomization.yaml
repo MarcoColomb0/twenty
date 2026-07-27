@@ -10,4 +10,3 @@ resources:
   - ./namespace.yaml
   - ./echo/ks.yaml
   - ./it-tools/ks.yaml
-  - ./stirling-pdf/ks.yaml

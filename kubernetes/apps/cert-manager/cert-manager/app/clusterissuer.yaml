@@ -7,17 +7,21 @@ spec:
   acme:
     privateKeySecretRef:
       name: letsencrypt-production
-    # "shortlived" issues 6-day certificates from Let's Encrypt's new hierarchy:
-    # leaf -> YE1 -> ISRG Root YE, reaching a trusted anchor only through two
-    # cross-signs added in May 2026. Current operating system trust stores cope,
-    # but clients that ship their own -- Firefox on Android among them -- reject
-    # it as an unknown issuer. On the LAN that is not academic: split DNS points
-    # the cluster domain at Envoy, so a phone gets this certificate rather than
-    # Cloudflare's, and HSTS makes the failure impossible to click past.
+    # 6-day certificates. Chosen deliberately: a key that leaks is only useful
+    # for days rather than months.
     #
-    # "classic" is the 90-day profile off the long-established ISRG Root X1
-    # chain, which every client already trusts.
-    profile: classic
+    # This was briefly switched to "classic" while chasing a Firefox "connection
+    # is not secure" error on Android, on the theory that the profile selected
+    # the trust chain. It does not -- the chain follows from the certificate's
+    # key algorithm, and ECDSA is what puts it under ISRG Root YE. The error
+    # turned out to be stale client state and cleared with the browser's cache.
+    #
+    # Worth knowing when a renewal looks stuck: cert-manager solves the two
+    # DNS-01 challenges for this wildcard one at a time, publishing a single TXT
+    # at _acme-challenge, and its self-check can sit in backoff insisting the
+    # record has not propagated when it plainly has. Deleting the Order restarts
+    # it. At six days that renewal comes round roughly weekly.
+    profile: shortlived
     server: https://acme-v02.api.letsencrypt.org/directory
     solvers:
       - dns01:

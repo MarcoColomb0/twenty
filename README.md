@@ -90,9 +90,6 @@ Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates 
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
 rebuilds it identically. Grafana, Immich, Karakeep, AFFiNE and Gatus all sign in this way.
 
-Stirling PDF is the exception: it gates OAuth user auto-creation behind a paid licence and refuses
-the login outright, so it keeps a local account and stays on the internal gateway.
-
 Grafana has no login form at all: Pocket ID is the only way in through a browser, so there is no
 Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
 auth, which is the way back in if Pocket ID is unreachable.
@@ -160,7 +157,6 @@ fetch the badges on this page.
 | [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Internal gateway only, Pocket ID with no password login at all, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
-| [Stirling PDF](https://github.com/Stirling-Tools/Stirling-PDF) | PDF editing — merge, split, convert, sign. Uploads go to an `emptyDir` and leave with the pod; only settings are kept. |
 | [Karakeep](https://karakeep.app) | Bookmark and read-later archive. Runs its crawler and search index as sidecars reached over localhost, so neither is on the cluster network. |
 | [AFFiNE](https://affine.pro) | Notes and whiteboards, backed by CloudNativePG and Dragonfly. Its schema migration runs as an init container, which is how upstream orders it too. |
 | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
