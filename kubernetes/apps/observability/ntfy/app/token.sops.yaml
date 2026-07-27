@@ -5,20 +5,20 @@ metadata:
   name: alertmanager-ntfy-token
 type: Opaque
 stringData:
-  token: ENC[AES256_GCM,data:SZIBqWo2M6m3bN2OwlVAuMg33Ig3ME3CANNmptSvbZkW,iv:48TkifN/tUDsijCqPe4JPLD61j+t0kzgC9DFxgqOkCY=,tag:c0gUMIshQR4+hr+m8+zQBQ==,type:str]
+  token: ENC[AES256_GCM,data:NQT0ze1q3zP9OA4zORgTnK/r0nxVO2FgtoqIqCvcIIs=,iv:DkoOstvIrZMcHe0/pALBosI5tWz9uSaFBUo37BdL7Mk=,tag:67Nb9xT2Jr6UoxDBccg9cA==,type:str]
 sops:
   age:
     - enc: |
         -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxY2p4YitVQmN3OUhyV1RY
-        dElVVFdtZWlTd1RrY0NnVmdNdEt1UkRjNkd3CnpjOEVLK0NsN3V5dzliWUhkOStB
-        MjRKQ003M0pNd2tvNklweE8yVHZGWUUKLS0tIE0rS05zL21FdTA2dkU3OFI2cEc0
-        VE8yRVJweUw0OWFUcUR2ZEY2bFRjRE0KuRE+XkB9wt+tJBR85mrGN47JXIq5Wlvn
-        9qU5rRUv3Lz6mp/ehx7FzS970JvUFrwQGlJfI53sZEGcB+T1NCeFBw==
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBOK2ZRUjk4MDFwNHZvWTBp
+        ZlFvbVVld05ENm5YVUJRZzBTamhBRHNaNEFvClVidXFwQytSNjQydVU4aUk0UEdY
+        QkRrdnJvSjA4Q3NiYXRwVUhzdzB2QzQKLS0tIDJPYzN0ait0Q3lXcGxTSHJuVHdz
+        WXFoQ3hORmlEMUErN2hqeGN5ek55MXMKN0DFPqgHkGxvaAZRBWTM++/t5oSvUKPV
+        0NhFNhdAZ3zZ+DJXZzJB0VMvDJFmpyn5jAZDvfUjORX24ia20eWnMg==
         -----END AGE ENCRYPTED FILE-----
       recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
   encrypted_regex: ^(data|stringData)$
-  lastmodified: "2026-07-27T18:54:31Z"
-  mac: ENC[AES256_GCM,data:qw90/BehkNXhEltVoc9Qy8TuBcj0e5z4nplJYQV8XXOb/pNHY1hUndZlm6OJgq5p04mxK5SSmEIudzvBdqsVwjTgj9azU9BX97UIt1l++bf894kJZ7f8fRfz1K8MoUDBY/o5+ggTDeROfFhe1ipMRh8hPLBPsbTiBoIK70Ytzj8=,iv:g5yaBecQtY0xhqrxBWDmTXoEArSNCBOz6kHLfz//yQY=,tag:LjxSwz6VPz5PISOIxL6Vxw==,type:str]
+  lastmodified: "2026-07-27T18:59:51Z"
+  mac: ENC[AES256_GCM,data:rZ1YoHgQVf9GVDDCdjKB6BbdOno/HdXU8KMUxCO7Y+gnaS9yAlIxzkL5/gVHLCs0vDc/rdLNLhDx5Rd8C/9h+bSz60vaEFCaitKYQIRtdgCUGMGSC9m0YDa4k/8McSRbsiOHYFMPnmsw27xblXi3CTGfvRiYyk9umIZKDiVNpP4=,iv:wxeSkh23v8/ox6Eqmp95DUh4DHioMucSc+3/Uj0plaU=,tag:/xlbB3NrKwmBO9/+gAIavg==,type:str]
   mac_only_encrypted: true
   version: 3.13.3
