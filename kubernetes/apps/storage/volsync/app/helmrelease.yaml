@@ -1,0 +1,23 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: volsync
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: volsync
+  interval: 1h
+  values:
+    manageCRDs: true
+    metrics:
+      disableAuth: true
+    # The mover pods do the chunking, compression and encryption, so the work
+    # lands on the cluster rather than on the Raspberry Pi -- it only ever
+    # receives finished blobs.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
