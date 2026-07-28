@@ -1,0 +1,16 @@
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: longhorn
+  annotations:
+    snapshot.storage.kubernetes.io/is-default-class: "true"
+driver: driver.longhorn.io
+# Delete: these snapshots exist only long enough for a mover to read a
+# consistent copy. The durable copy is the restic repository on the Pi, so
+# keeping the snapshot after the backup would pin space on Longhorn for nothing.
+deletionPolicy: Delete
+parameters:
+  # A Longhorn-internal snapshot rather than a full backup to an external
+  # target: fast, local, and exactly what a backup source needs.
+  type: snap
