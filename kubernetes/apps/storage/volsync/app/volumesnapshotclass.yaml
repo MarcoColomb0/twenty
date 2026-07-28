@@ -1,3 +1,7 @@
+# Lives with VolSync rather than with the snapshot controller: Flux dry-runs a
+# whole Kustomization at once, so a VolumeSnapshotClass sitting beside the chart
+# that installs its CRD fails validation before that chart has ever run. VolSync
+# already waits for the controller, and is the only consumer.
 ---
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotClass
