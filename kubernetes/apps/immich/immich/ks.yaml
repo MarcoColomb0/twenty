@@ -12,6 +12,13 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/immich/immich/app
   postBuild:
+    # Everything the volsync component needs. Adding backup to another app is
+    # these three lines plus the component reference -- no new secret, because
+    # the credentials live once in cluster-secrets.
+    substitute:
+      APP: immich
+      VOLSYNC_CLAIM: immich-data
+      VOLSYNC_CACHE_CAPACITY: 16Gi
     substituteFrom:
       - name: cluster-secrets
         kind: Secret

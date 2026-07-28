@@ -1,0 +1,36 @@
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: "${APP}"
+spec:
+  sourcePVC: "${VOLSYNC_CLAIM:=${APP}}"
+  trigger:
+    # Staggered per app via VOLSYNC_SCHEDULE so several movers do not compete
+    # for the same uplink at once.
+    schedule: "${VOLSYNC_SCHEDULE:=0 3 * * *}"
+  restic:
+    repository: "${APP}-volsync-restic"
+    # Snapshot rather than Direct: the mover reads a point-in-time copy instead
+    # of the live volume, so the app keeps its ReadWriteOnce attachment and the
+    # backup is internally consistent.
+    copyMethod: Snapshot
+    volumeSnapshotClassName: longhorn
+    storageClassName: longhorn
+    # restic keeps a local index cache. Too small and every run re-reads the
+    # repository metadata over the network.
+    cacheCapacity: "${VOLSYNC_CACHE_CAPACITY:=8Gi}"
+    cacheStorageClassName: longhorn
+    accessModes:
+      - "ReadWriteOnce"
+    moverSecurityContext:
+      runAsUser: ${VOLSYNC_UID:=1000}
+      runAsGroup: ${VOLSYNC_GID:=1000}
+      fsGroup: ${VOLSYNC_GID:=1000}
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 6
+    # Pruning rewrites the repository, so it is deliberately infrequent: it is
+    # the expensive operation, and forget alone already drops the snapshots.
+    pruneIntervalDays: 14
