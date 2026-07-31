@@ -1,0 +1,24 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: plugin-barman-cloud
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: plugin-barman-cloud
+  interval: 1h
+  values:
+    # CloudNativePG 1.30 deprecates in-tree barman support in favour of this
+    # plugin. It supplies the ObjectStore kind and a sidecar that ships WAL and
+    # base backups, which is what makes point-in-time recovery possible rather
+    # than only restoring last night's dump.
+    crds:
+      create: true
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
