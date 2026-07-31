@@ -3,6 +3,15 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backup-dashboard
+  annotations:
+    # The dashboard JSON refers to Grafana's own ${DS_PROMETHEUS} datasource
+    # variable, and Flux rewrites ${...} everywhere including ConfigMap
+    # contents -- in strict mode it fails outright rather than passing it
+    # through:
+    #   envsubst error: variable not set (strict mode): "DS_PROMETHEUS"
+    # Substitution is switched off for this object so Grafana receives the
+    # placeholder it expects.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
   labels:
     # The kube-prometheus-stack sidecar watches every namespace for this label
     # and ignores its value.
