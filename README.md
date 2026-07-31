@@ -1,16 +1,12 @@
+<div align="center">
+
 # twenty
 
-My home Kubernetes cluster, running on bare metal and a VM at home, managed entirely through Git.
+_A home Kubernetes cluster on Talos Linux, managed entirely through Git._
 
-[Talos Linux](https://www.talos.dev) for the OS, [Flux](https://fluxcd.io) for GitOps, [Cilium](https://cilium.io)
-for networking, [Pocket ID](https://github.com/pocket-id/pocket-id) for single sign-on,
-[SOPS](https://github.com/getsops/sops) for secrets. Everything that runs in the cluster is declared in
-this repository — nothing is applied by hand, including DNS records and OIDC clients.
+</div>
 
-## Live status
-
-Numbers below are queried from the cluster's own Prometheus and rendered by
-[Kromgo](https://github.com/home-operations/kromgo). They are real, and they update on their own.
+<div align="center">
 
 ![Talos](https://kromgo.marco.wf/badges/talos_version)
 ![Kubernetes](https://kromgo.marco.wf/badges/kubernetes_version)
@@ -23,16 +19,22 @@ Numbers below are queried from the cluster's own Prometheus and rendered by
 ![Pods](https://kromgo.marco.wf/badges/cluster_pod_count)
 ![CPU](https://kromgo.marco.wf/badges/cluster_cpu_usage)
 ![Memory](https://kromgo.marco.wf/badges/cluster_memory_usage)
-
 ![Volumes](https://kromgo.marco.wf/badges/longhorn_volume_count)
 ![Disk Used](https://kromgo.marco.wf/badges/longhorn_capacity_used)
-![Disk Total](https://kromgo.marco.wf/badges/longhorn_capacity_total)
 
-![Network In](https://kromgo.marco.wf/badges/cluster_network_rx)
-![Network Out](https://kromgo.marco.wf/badges/cluster_network_tx)
-![Requests](https://kromgo.marco.wf/badges/envoy_request_rate)
+</div>
 
-### Last 24 hours
+---
+
+## 🍼 Overview
+
+Three Talos nodes, all control plane, all schedulable. [Flux](https://fluxcd.io) reconciles
+everything in this repository into the cluster — including DNS records, TLS certificates and OIDC
+clients. Nothing is applied by hand, and anything that cannot be committed in the clear is encrypted
+with SOPS and age.
+
+The numbers above are queried from the cluster's own Prometheus and rendered by
+[Kromgo](https://github.com/home-operations/kromgo). They are real, and they update on their own.
 
 | CPU | Memory |
 |---|---|
@@ -42,44 +44,65 @@ Numbers below are queried from the cluster's own Prometheus and rendered by
 |---|---|
 | ![Running pods](https://kromgo.marco.wf/graphs/cluster_pods?last=24h) | ![Network throughput](https://kromgo.marco.wf/graphs/cluster_network?last=24h) |
 
-Prometheus itself is not exposed — Kromgo publishes only the queries defined in
-[`kubernetes/apps/observability/kromgo/app/helmrelease.yaml`](./kubernetes/apps/observability/kromgo/app/helmrelease.yaml).
-
-## Hardware
-
-Three nodes, all control plane, all schedulable. Quorum of three, no separate workers.
+## 🔧 Hardware
 
 | Node | Address | Kind | Role |
 |---|---|---|---|
-| `twenty-01` | `192.168.100.200` | Bare metal | Control plane + workloads |
-| `twenty-virt01` | `192.168.100.201` | VM | Control plane + workloads |
-| `twenty-hp01` | `192.168.100.202` | HP bare metal | Control plane + workloads |
+| `twenty-01` | `192.168.100.200` | VM on a LattePanda N150 | Control plane + workloads |
+| `twenty-virt01` | `192.168.100.201` | VM on the same LattePanda | Control plane + workloads |
+| `twenty-hp01` | `192.168.100.202` | HP mini PC, i5-8500T | Control plane + workloads |
 
 The API server sits behind a shared VIP at `192.168.100.100`, so losing any single node does not take
-`kubectl` with it. Node configuration lives in [`talos/talconfig.yaml`](./talos/talconfig.yaml) and the
-patches under [`talos/patches/`](./talos/patches).
+`kubectl` with it.
 
-## What runs here
+Two of the three nodes are virtual machines on **one** physical host. Longhorn spreads replicas across
+*nodes* and cannot know that, so "two healthy replicas" can still mean one box — worth remembering
+until the LattePanda pair is replaced with separate hardware. `twenty-hp01` is the only node with an
+iGPU, which is what Immich transcodes on.
 
-### Core
+## 🖥️ Technology Stack
 
-| Component | Purpose |
-|---|---|
-| [Talos Linux](https://www.talos.dev) | Immutable, API-driven OS. No SSH, no shell, no package manager. |
-| [Flux Operator](https://fluxcd.control-plane.io/operator/) + Flux | Reconciles this repository into the cluster. |
-| [Cilium](https://cilium.io) | CNI in native routing mode, kube-proxy replacement, L2 announcements for load balancer IPs. |
-| [CoreDNS](https://coredns.io) | Cluster DNS. |
-| [Envoy Gateway](https://gateway.envoyproxy.io) | Gateway API ingress, internal and external. |
-| [cert-manager](https://cert-manager.io) | Wildcard TLS from Let's Encrypt via DNS-01. |
-| [external-dns](https://github.com/kubernetes-sigs/external-dns) | Publishes public DNS records to Cloudflare. |
-| [k8s-gateway](https://github.com/k8s-gateway/k8s_gateway) | Answers for cluster hostnames, with records derived from `HTTPRoute` and `Service`. |
-| [Blocky](https://github.com/0xERR0R/blocky) | The LAN's resolver. Forwards the cluster domain to k8s-gateway, everything else upstream over DNS-over-TLS, and blocks ads on the way. |
-| [cloudflared](https://github.com/cloudflare/cloudflared) | Tunnel for public traffic — no ports forwarded on the router. |
-| [Reloader](https://github.com/stakater/Reloader) | Restarts workloads when their ConfigMaps or Secrets change. |
-| [Spegel](https://spegel.dev) | Peer-to-peer image mirror. Nodes pull layers from each other over the LAN, so only the first pull of an image leaves the network. |
-| [Intel device plugins](https://github.com/intel/intel-device-plugins-for-kubernetes) | Advertises `twenty-hp01`'s iGPU as `gpu.intel.com/i915`, which is what lets Immich transcode on Quick Sync. A `hostPath` mount is not enough: it shows the render node to the container but never grants the device cgroup entry. |
+|   | Name | Purpose |
+|---|---|---|
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/talos.svg"> | [Talos Linux](https://www.talos.dev) | Immutable, API-driven OS. No SSH, no shell, no package manager. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | [Kubernetes](https://kubernetes.io) | Three-node cluster, etcd quorum of three. |
+| <img width="28" src="https://github.com/cncf/artwork/raw/main/projects/flux/icon/color/flux-icon-color.svg"> | [Flux](https://fluxcd.io) | Reconciles this repository into the cluster. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/cilium.svg"> | [Cilium](https://cilium.io) | CNI in native routing mode, kube-proxy replacement, L2 announcements for load balancer IPs. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/coredns.svg"> | [CoreDNS](https://coredns.io) | Cluster DNS, with the cluster domain forwarded to k8s-gateway. |
+| <img width="28" src="https://github.com/cncf/artwork/raw/main/projects/envoy/icon/color/envoy-icon-color.svg"> | [Envoy Gateway](https://gateway.envoyproxy.io) | Gateway API ingress, internal and external. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/cert-manager.svg"> | [cert-manager](https://cert-manager.io) | Wildcard TLS from Let's Encrypt via DNS-01, on the six-day profile. |
+| <img width="28" src="https://raw.githubusercontent.com/kubernetes-sigs/external-dns/master/docs/img/external-dns.png"> | [external-dns](https://github.com/kubernetes-sigs/external-dns) | Publishes public DNS records to Cloudflare. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/blocky.svg"> | [Blocky](https://github.com/0xERR0R/blocky) | The LAN's resolver. Splits the cluster domain to k8s-gateway, everything else upstream over DNS-over-TLS, ads blocked on the way. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/cloudflared.svg"> | [cloudflared](https://github.com/cloudflare/cloudflared) | Tunnel for public traffic — no ports forwarded on the router. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/longhorn.svg"> | [Longhorn](https://longhorn.io) | Replicated block storage, two replicas per volume, default StorageClass. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/postgresql.svg"> | [CloudNativePG](https://cloudnative-pg.io) | PostgreSQL operator. An app that owns a database keeps the `Cluster` beside it. |
+| <img width="28" src="https://avatars.githubusercontent.com/u/80352373"> | [Dragonfly](https://www.dragonflydb.io) | Redis-compatible in-memory store. |
+| <img width="28" src="https://raw.githubusercontent.com/backube/volsync/main/docs/media/volsync.svg"> | [VolSync](https://volsync.readthedocs.io) | Backs volumes up with restic, encrypted before anything leaves the cluster. |
+| <img width="28" src="https://avatars.githubusercontent.com/u/99631794"> | [Spegel](https://spegel.dev) | Peer-to-peer image mirror. Nodes pull layers from each other over the LAN, so only the first pull of an image leaves the network. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/prometheus.svg"> | [Prometheus](https://prometheus.io) | Metrics, 5-day retention on Longhorn. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/grafana.svg"> | [Grafana](https://grafana.com) | Dashboards. No login form at all — Pocket ID only. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/alertmanager.svg"> | [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) | Routes alerts to ntfy. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/ntfy.svg"> | [ntfy](https://ntfy.sh) | Push notifications, published so alerts arrive when away from home. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/gatus.svg"> | [Gatus](https://gatus.io) | Uptime checks, and the closest thing here to a service index. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/crowdsec.svg"> | [CrowdSec](https://crowdsec.net) | Reads the external gateway's logs and issues bans, enforced as an `ext_authz` check. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/pocket-id.svg"> | [Pocket ID](https://github.com/pocket-id/pocket-id) | OIDC provider. Passkeys only — there is no password to phish. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/reloader.svg"> | [Reloader](https://github.com/stakater/Reloader) | Restarts workloads when their ConfigMaps or Secrets change. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes-dashboard.svg"> | [Intel device plugins](https://github.com/intel/intel-device-plugins-for-kubernetes) | Advertises `twenty-hp01`'s iGPU as `gpu.intel.com/i915`. A `hostPath` mount is not enough: it shows the render node to the container but never grants the device cgroup entry. |
 
-### Identity
+## 📦 Applications
+
+|   | Name | Notes |
+|---|---|---|
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [Immich](https://immich.app) | Photos and video. Internal gateway only, Pocket ID with no password login at all, transcodes on the iGPU. Settings live in its database rather than a mounted file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/affine.svg"> | [AFFiNE](https://affine.pro) | Notes and whiteboards. Its schema migration runs as an init container, which is how upstream orders it too. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/karakeep.svg"> | [Karakeep](https://karakeep.app) | Bookmarks and read-later. Crawler and search index run as sidecars reached over localhost, so neither is on the cluster network. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/actual-budget.svg"> | [Actual Budget](https://actualbudget.org) | Budgeting, SQLite-backed. Pocket ID is enforced — there is no server password to fall back to. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/ghostfolio.svg"> | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/it-tools.svg"> | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
+
+## 🔑 Identity
 
 | Component | Purpose |
 |---|---|
@@ -94,7 +117,7 @@ Grafana has no login form at all: Pocket ID is the only way in through a browser
 Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
 auth, which is the way back in if Pocket ID is unreachable.
 
-### Security
+## 🛡️ Security
 
 | Component | Purpose |
 |---|---|
@@ -120,22 +143,7 @@ than a Cloudflare one. AppSec is evaluated in the bouncer instead of the parsers
 guard: the bouncer exempts the same private ranges. The `SecurityPolicy` also sets `failOpen`, so a
 bouncer that is down costs remediation and not the gateway.
 
-### Storage and data
-
-| Component | Purpose |
-|---|---|
-| [Longhorn](https://longhorn.io) | Replicated block storage, two replicas per volume, default StorageClass. |
-| [CloudNativePG](https://cloudnative-pg.io) | PostgreSQL operator. |
-| [Dragonfly](https://www.dragonflydb.io) | Redis-compatible in-memory store. |
-
-### Observability
-
-| Component | Purpose |
-|---|---|
-| [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts) | Prometheus (5d retention on Longhorn), Alertmanager, Grafana, kube-state-metrics, node-exporter. |
-| [Kromgo](https://github.com/home-operations/kromgo) | Turns whitelisted PromQL into the public badges and graphs above. |
-| [ntfy](https://ntfy.sh) | Push notifications. Alertmanager posts here, and ntfy's built-in Alertmanager template renders the payload, so no translating sidecar sits between them. |
-| [Gatus](https://gatus.io) | Uptime checks, and the closest thing here to a service index. Paired with [gatus-sidecar](https://github.com/home-operations/gatus-sidecar), which turns every `HTTPRoute` into an endpoint, so a service is listed and monitored by being routed rather than by being named anywhere. |
+## 📊 Observability
 
 Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,
 cert-manager, Blocky, Pocket ID, and CrowdSec — the agent on every node, plus AppSec, the LAPI and
@@ -150,20 +158,158 @@ at all, so Pocket ID is the only way in, and the external gateway puts it behind
 and AppSec like everything else out there. Kromgo is public too, because GitHub has to be able to
 fetch the badges on this page.
 
-### Applications
+## 💾 Backups
 
-| App | Purpose |
-|---|---|
-| [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
-| [Immich](https://immich.app) | Photo and video library, backed by CloudNativePG and Dragonfly. Internal gateway only, Pocket ID with no password login at all, and transcodes on the iGPU. Its settings live in its own database rather than a mounted config file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
-| [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
-| [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
-| [Karakeep](https://karakeep.app) | Bookmark and read-later archive. Runs its crawler and search index as sidecars reached over localhost, so neither is on the cluster network. |
-| [Actual Budget](https://actualbudget.org) | Budgeting. SQLite-backed, so no database cluster of its own. Pocket ID is enforced as the only way in — there is no server password to fall back to. |
-| [AFFiNE](https://affine.pro) | Notes and whiteboards, backed by CloudNativePG and Dragonfly. Its schema migration runs as an init container, which is how upstream orders it too. |
-| echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
+Backups run to a [rustfs](https://rustfs.com) S3 endpoint on a Raspberry Pi 4 on the LAN.
 
-## Networking
+**restic encrypts client-side.** The mover pods chunk, deduplicate, compress and encrypt inside the
+cluster, so the Pi only ever receives finished blobs and does none of the work — which is what makes
+a 4GB Pi an adequate destination. It also means the Pi holds nothing readable: server-side encryption
+on a box you own stores the key next to the data and protects against nothing if the box is stolen.
+
+Adding a volume to the backup set is a component reference and three lines of substitution — no new
+secret, because the credentials live once in `cluster-secrets`:
+
+```yaml
+# kubernetes/apps/<ns>/<app>/app/kustomization.yaml
+components:
+  - ../../../../components/volsync
+```
+```yaml
+# kubernetes/apps/<ns>/<app>/ks.yaml
+postBuild:
+  substitute:
+    APP: myapp
+    VOLSYNC_CLAIM: myapp-data
+```
+
+Each app gets its own restic repository under `${APP}`. They cannot share one: VolSync hardcodes the
+restic host to `volsync` for every mover, so a single repository would apply one retention policy
+across everything in it and quietly drop other apps' snapshots.
+
+Retention is 7 daily, 4 weekly, 6 monthly. `forget` runs every cycle and is cheap; `prune` actually
+repacks the repository and runs fortnightly.
+
+Two deliberate choices worth knowing:
+
+- **`copyMethod: Direct`**, not `Snapshot`. On Longhorn a snapshot is restored into a whole new volume
+  sized by the source claim's *request*, so Immich would provision another 150Gi and copy 56GB into it
+  nightly — and with over-provisioning capped at 100%, no node could schedule it at any replica count.
+- **Scratch volumes use `longhorn-single`.** The clone and the restic cache are ephemeral; the durable
+  copy is the repository, so replicating them protects nothing.
+
+### What is and is not covered
+
+| Data | Covered by | Status |
+|---|---|---|
+| `immich-data`, `affine-storage`, `karakeep-data`, `actual-data` | VolSync + restic | ✅ |
+| PostgreSQL (Immich, AFFiNE, Ghostfolio, Pocket ID) | barman-cloud → `twenty-postgres` | ⏳ not yet deployed |
+| Prometheus, Meilisearch index, CrowdSec, ntfy cache | nothing, on purpose | expires or rebuilds itself |
+
+> **The databases are not backed up yet.** Until barman-cloud lands, a CloudNativePG cluster survives
+> on its replicas alone — losing both instances loses the data.
+
+## 🚑 Restore
+
+### The one thing to protect
+
+Everything below assumes you still have the **age private key**. rustfs holds nothing but ciphertext,
+and the restic passphrase lives in `cluster-secrets` encrypted with that key. No age key means no
+passphrase, which means the backups are permanently unreadable. Keep a copy off the cluster — on
+paper or a USB stick, not only on the machine it protects.
+
+### Restore one volume
+
+VolSync restores through a `ReplicationDestination`, which writes the repository's latest snapshot
+into a new claim. Nothing overwrites the live volume until you swap it in.
+
+```sh
+# 1. Stop the app so nothing writes while the volume is swapped
+kubectl scale deploy/<app> -n <ns> --replicas=0
+
+# 2. Pull the latest snapshot into a new claim
+kubectl apply -n <ns> -f - <<'EOF'
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: <app>-restore
+spec:
+  trigger:
+    manual: restore-once
+  restic:
+    repository: <app>-volsync-restic     # the Secret the component already created
+    copyMethod: Direct
+    destinationPVC: <app>-data           # an EXISTING empty claim, or drop this line
+    capacity: 10Gi                       #   and let VolSync provision one
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: longhorn
+    cacheStorageClassName: longhorn-single
+    cacheCapacity: 8Gi
+    moverSecurityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000 }
+EOF
+
+# 3. Watch it land
+kubectl get replicationdestination -n <ns> <app>-restore -w
+
+# 4. Start the app again
+kubectl scale deploy/<app> -n <ns> --replicas=1
+```
+
+To restore an *older* snapshot rather than the latest, add `previous: N` under `spec.restic` — `N` is
+how many snapshots back to step.
+
+To inspect a repository by hand, run restic anywhere with the same four environment variables the
+component builds (`RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`):
+
+```sh
+restic snapshots
+restic ls latest
+restic restore latest --target /tmp/out
+```
+
+### Restore one database
+
+CloudNativePG rebuilds a replica by itself. If one instance is broken but the primary is healthy,
+delete the replica's claim and pod and it re-clones from the primary:
+
+```sh
+kubectl delete pvc  -n <ns> postgres-<app>-2 --wait=false
+kubectl delete pod  -n <ns> postgres-<app>-2
+```
+
+For a logical copy before touching anything — worth doing while barman-cloud is still pending:
+
+```sh
+kubectl exec -n <ns> postgres-<app>-1 -c postgres -- \
+  pg_dump -U postgres -d <app> --no-owner --no-acl -Fc > <app>.dump
+```
+
+Restoring that dump into a fresh cluster leaves every object owned by `postgres`, which the app
+cannot read — reassign ownership afterwards or it fails with `permission denied for table ...`.
+
+### Rebuild the whole cluster
+
+Ordering matters more than any individual step.
+
+1. **Recover the age key.** Without it nothing else in this list is possible.
+2. **Reinstall Talos.** `just talos generate-config`, then `just talos apply-node <ip>` per node.
+   Node configuration is entirely in [`talos/`](./talos) — nothing was set by hand.
+3. **Bootstrap Flux** from [`bootstrap/`](./bootstrap). It will reconcile this repository and rebuild
+   every namespace, workload, certificate, DNS record and OIDC client on its own.
+4. **Wait for storage.** Longhorn, the snapshot controller and VolSync must be healthy before any
+   restore will work. `kubectl get storageclass` should list `longhorn` and `longhorn-single`.
+5. **Restore the databases**, before the apps that use them come up healthy. Until barman-cloud is
+   deployed this means restoring `pg_dump` output by hand.
+6. **Restore the volumes** with a `ReplicationDestination` per app, as above. The repositories are
+   independent, so these can run in parallel — though on one Pi they will queue on disk anyway.
+7. **Re-enrol what lives outside git**: CrowdSec's console enrolment and any Pocket ID passkeys
+   registered against the old instance.
+
+What a rebuild does *not* need: DNS records, TLS certificates, OIDC clients and database roles are all
+declared here and recreated by Flux. What it does need and cannot get from git: the age key, and the
+data in the restic repositories.
+
+## 🌐 Networking
 
 | | |
 |---|---|
@@ -199,7 +345,7 @@ Nothing here maintains a DNS record by hand. k8s-gateway derives them from the `
 this repository, so an app becomes resolvable on the LAN the moment its route exists — and
 external-dns does the same for public names in Cloudflare.
 
-## Repository layout
+## 🗂️ Repository layout
 
 ```
 bootstrap/     Helmfile + scripts to get from bare Talos to a Flux-managed cluster
@@ -233,7 +379,7 @@ Secrets are committed encrypted with SOPS and age, and decrypted in-cluster by F
 `*.sops.yaml` are never readable in this repository — **this repository is public**, so every value
 that should stay private lives inside one of them.
 
-## Operating it
+## 🤖 Operating it
 
 The toolchain is pinned in [`.mise.toml`](./.mise.toml); `mise install` gets everything.
 
@@ -254,7 +400,9 @@ Dependencies are kept current by [Renovate](https://www.mend.io/renovate), and e
 [flux-local](https://github.com/allenporter/flux-local) to diff the rendered manifests before anything
 reaches the cluster.
 
-## Credits
+## 🤝 Acknowledgments
 
 Built from [onedr0p/cluster-template](https://github.com/onedr0p/cluster-template) and shaped by the
-[Home Operations](https://discord.gg/home-operations) community.
+[Home Operations](https://discord.gg/home-operations) community. README structure owes a lot to
+[xunholy/k8s-gitops](https://github.com/xunholy/k8s-gitops); icons come from
+[Dashboard Icons](https://dashboardicons.com).

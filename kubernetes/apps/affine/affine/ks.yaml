@@ -12,6 +12,11 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/affine/affine/app
   postBuild:
+    substitute:
+      APP: affine
+      VOLSYNC_CLAIM: affine-storage
+      VOLSYNC_SCHEDULE: "0 4 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
     substituteFrom:
       - name: cluster-secrets
         kind: Secret

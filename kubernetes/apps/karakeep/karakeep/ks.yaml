@@ -7,6 +7,11 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/karakeep/karakeep/app
   postBuild:
+    substitute:
+      APP: karakeep
+      VOLSYNC_CLAIM: karakeep-data
+      VOLSYNC_SCHEDULE: "30 4 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
     substituteFrom:
       - name: cluster-secrets
         kind: Secret
