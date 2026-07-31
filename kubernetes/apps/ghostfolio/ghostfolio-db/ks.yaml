@@ -12,6 +12,9 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/ghostfolio/ghostfolio-db/app
   postBuild:
+    substitute:
+      APP: ghostfolio
+      CNPG_BACKUP_SCHEDULE: "0 0 2 * * *"
     substituteFrom:
       - name: cluster-secrets
         kind: Secret

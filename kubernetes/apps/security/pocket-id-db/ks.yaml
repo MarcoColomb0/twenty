@@ -10,6 +10,9 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/security/pocket-id-db/app
   postBuild:
+    substitute:
+      APP: pocket-id
+      CNPG_BACKUP_SCHEDULE: "0 45 2 * * *"
     substituteFrom:
       - name: cluster-secrets
         kind: Secret

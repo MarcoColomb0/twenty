@@ -13,6 +13,13 @@ spec:
   storage:
     size: 10Gi
     storageClass: longhorn
+  # Continuous WAL archiving. The ScheduledBackup takes base backups; this is
+  # what lets recovery land between them rather than only on one.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "affine"
   bootstrap:
     initdb:
       database: affine

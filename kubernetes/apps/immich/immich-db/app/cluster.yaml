@@ -19,6 +19,13 @@ spec:
   # Immich expects superuser on its own role: it creates and upgrades
   # extensions itself during schema migrations.
   enableSuperuserAccess: true
+  # Continuous WAL archiving. The ScheduledBackup takes base backups; this is
+  # what lets recovery land between them rather than only on one.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "immich"
   bootstrap:
     initdb:
       database: immich

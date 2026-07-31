@@ -12,6 +12,9 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/immich/immich-db/app
   postBuild:
+    substitute:
+      APP: immich
+      CNPG_BACKUP_SCHEDULE: "0 15 2 * * *"
     substituteFrom:
       - name: cluster-secrets
         kind: Secret
