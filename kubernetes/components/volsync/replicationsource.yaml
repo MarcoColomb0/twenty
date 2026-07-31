@@ -16,11 +16,11 @@ spec:
     # backup is internally consistent.
     copyMethod: Snapshot
     volumeSnapshotClassName: longhorn
-    storageClassName: longhorn
+    storageClassName: "${VOLSYNC_STORAGECLASS:=longhorn-single}"
     # restic keeps a local index cache. Too small and every run re-reads the
     # repository metadata over the network.
     cacheCapacity: "${VOLSYNC_CACHE_CAPACITY:=8Gi}"
-    cacheStorageClassName: longhorn
+    cacheStorageClassName: "${VOLSYNC_CACHE_STORAGECLASS:=longhorn-single}"
     accessModes:
       - "ReadWriteOnce"
     moverSecurityContext:

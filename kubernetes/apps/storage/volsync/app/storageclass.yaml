@@ -1,0 +1,23 @@
+---
+# For VolSync's own scratch volumes only, never for application data.
+#
+# A ReplicationSource restores its snapshot into a claim the size of the source
+# PVC's *request*, not its contents -- Immich's 150Gi claim holds 56GiB, but the
+# clone still asks for 150Gi. At the default two replicas that is 300GB Longhorn
+# cannot place, and the volume faults with "replica scheduling failure ...
+# insufficient storage".
+#
+# One replica is right regardless of space: the clone exists only for the length
+# of a backup and the restic cache rebuilds itself. Replicating either protects
+# nothing -- the durable copy is the restic repository.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-single
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
+  fsType: ext4
