@@ -11,10 +11,18 @@ spec:
     schedule: "${VOLSYNC_SCHEDULE:=0 3 * * *}"
   restic:
     repository: "${APP}-volsync-restic"
-    # Snapshot rather than Direct: the mover reads a point-in-time copy instead
-    # of the live volume, so the app keeps its ReadWriteOnce attachment and the
-    # backup is internally consistent.
-    copyMethod: Snapshot
+    # Direct by default. Snapshot sounds better -- a consistent point-in-time
+    # read -- but on Longhorn it restores the snapshot into a whole new volume
+    # first, so every run provisions a claim the size of the source's *request*
+    # and copies the contents into it. For Immich that is a 150Gi claim and
+    # 56GB copied nightly, and with over-provisioning capped at 100% no node
+    # could even schedule it:
+    #   precheck new replica failed: insufficient storage
+    # Direct reads the source volume itself: no second copy, no extra
+    # provisioning. Databases do not rely on this -- they are backed up by
+    # barman-cloud, which takes its own consistent snapshot -- so what is left
+    # here is file data where reading live is fine.
+    copyMethod: "${VOLSYNC_COPYMETHOD:=Direct}"
     volumeSnapshotClassName: longhorn
     storageClassName: "${VOLSYNC_STORAGECLASS:=longhorn-single}"
     # restic keeps a local index cache. Too small and every run re-reads the
