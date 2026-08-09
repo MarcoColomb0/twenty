@@ -1,0 +1,14 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres-pocket-id
+spec:
+  # Written by hand rather than set via the Cluster's spec.monitoring
+  # .enablePodMonitor, which CloudNativePG has deprecated.
+  selector:
+    matchLabels:
+      cnpg.io/cluster: postgres-pocket-id
+      cnpg.io/podRole: instance
+  podMetricsEndpoints:
+    - port: metrics

@@ -1,0 +1,25 @@
+---
+# Dragonfly used to live in database while the app was in default, so this had
+# to admit an entire namespace. Both sit in ghostfolio now, which allows the
+# narrower rule: a podSelector with no namespaceSelector matches only pods in
+# this namespace, so this admits the app itself and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ghostfolio-dragonfly-allow-app
+spec:
+  podSelector:
+    matchLabels:
+      app: ghostfolio-dragonfly
+      app.kubernetes.io/name: dragonfly
+      app.kubernetes.io/part-of: dragonfly
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ghostfolio
+      ports:
+        - port: 6379
+          protocol: TCP
+  policyTypes:
+    - Ingress

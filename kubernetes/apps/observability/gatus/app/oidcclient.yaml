@@ -1,0 +1,25 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: gatus
+spec:
+  callbackUrls:
+    # Gatus requires this exact suffix.
+    - https://status.${SECRET_DOMAIN}/authorization-code/callback
+  logoutCallbackUrls:
+    - https://status.${SECRET_DOMAIN}
+  # Gatus does not implement PKCE -- it builds the authorize URL with only state
+  # and nonce, so Pocket ID rejects the request outright:
+  #   This client requires PKCE, but the 'code_challenge' parameter is missing
+  # It is a confidential client holding a real client secret, which is what PKCE
+  # substitutes for in public clients that cannot keep one.
+  pkceEnabled: false
+  skipConsent: true
+  secret:
+    name: gatus-oidc
+    # Named for the environment variables the config expands, because envFrom
+    # imports a Secret's keys verbatim.
+    keys:
+      clientID: GATUS_OIDC_CLIENT_ID
+      clientSecret: GATUS_OIDC_CLIENT_SECRET

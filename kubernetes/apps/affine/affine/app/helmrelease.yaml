@@ -1,0 +1,156 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: affine
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: affine
+  interval: 1h
+  values:
+    controllers:
+      affine:
+        # Recreate rather than RollingUpdate: the blob store is a single
+        # ReadWriteOnce volume, so two pods cannot hold it at once.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        initContainers:
+          # AFFiNE reads its OAuth provider from a config file and offers no
+          # environment variable for it, so the file is assembled at startup
+          # from the Secret the operator mints. Writing it into the repository
+          # is not an option -- this one is public.
+          config:
+            image: &img
+              repository: ghcr.io/toeverything/affine
+              tag: "0.27.3"
+            command:
+              - node
+              - -e
+              - |
+                const fs = require('node:fs');
+                fs.mkdirSync('/root/.affine/config', { recursive: true });
+                fs.writeFileSync('/root/.affine/config/config.json', JSON.stringify({
+                  auth: { allowSignupForOauth: true, requireEmailDomainVerification: false },
+                  oauth: { providers: { oidc: {
+                    issuer: process.env.OIDC_ISSUER,
+                    clientId: process.env.OIDC_CLIENT_ID,
+                    clientSecret: process.env.OIDC_CLIENT_SECRET,
+                    args: { scope: 'openid email profile', claim_id: 'sub', claim_email: 'email', claim_name: 'name' },
+                  } } },
+                }, null, 2));
+            env:
+              OIDC_ISSUER: https://id.${SECRET_DOMAIN}
+              OIDC_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc affine-oidc
+                    key: client_id
+              OIDC_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
+          # Upstream runs this as its own compose service and blocks the server
+          # on it completing. As an init container the ordering is free.
+          migration:
+            image: *img
+            command:
+              - sh
+              - -c
+              - node ./scripts/self-host-predeploy.js
+            env: &dbenv
+              REDIS_SERVER_HOST: affine-dragonfly.affine.svc.cluster.local
+              REDIS_SERVER_PORT: "6379"
+              # The indexer wants a separate full-text search service that is
+              # not deployed here, and AFFiNE fails its own health check when it
+              # is enabled without one.
+              AFFINE_INDEXER_ENABLED: "false"
+              DATABASE_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-affine-app
+                    key: uri
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+        containers:
+          app:
+            image: *img
+            env:
+              <<: *dbenv
+              AFFINE_SERVER_PORT: &port 3010
+              # Without these the links AFFiNE mints -- invites, shared pages --
+              # point at localhost rather than at the name it is reached by.
+              AFFINE_SERVER_HTTPS: "true"
+              AFFINE_SERVER_HOST: affine.${SECRET_DOMAIN}
+              AFFINE_SERVER_EXTERNAL_URL: https://affine.${SECRET_DOMAIN}
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: *port
+                  initialDelaySeconds: 30
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+              readiness: *probes
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                memory: 2Gi
+    persistence:
+      # Blobs live here, so it is mounted into the migration step too -- that is
+      # what upstream's compose does by sharing the same volume.
+      storage:
+        existingClaim: affine-storage
+        advancedMounts:
+          affine:
+            app:
+              - path: /root/.affine/storage
+            migration:
+              - path: /root/.affine/storage
+      config:
+        type: emptyDir
+        advancedMounts:
+          affine:
+            config:
+              - path: /root/.affine/config
+            app:
+              - path: /root/.affine/config
+            migration:
+              - path: /root/.affine/config
+    service:
+      app:
+        controller: affine
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        # Notes are personal data, so this stays on the internal gateway like
+        # Immich and Karakeep.
+        hostnames:
+          - "affine.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

@@ -1,0 +1,126 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: crowdsec
+spec:
+  chart:
+    spec:
+      chart: crowdsec
+      version: 0.24.0
+      sourceRef:
+        kind: HelmRepository
+        name: crowdsec
+  interval: 1h
+  values:
+    # Talos runs containerd, so pod logs are in CRI format
+    container_runtime: containerd
+
+    agent:
+      # Only the external gateway is worth watching: envoy-internal serves the
+      # LAN, which is whitelisted anyway.
+      acquisition:
+        - namespace: network
+          podName: envoy-external-*
+          program: envoy
+      env:
+        - name: PARSERS
+          value: crowdsecurity/cri-logs
+        # yanis-kouidri/envoy pulls in crowdsecurity/base-http-scenarios and
+        # crowdsecurity/http-cve as dependencies, so neither is listed here.
+        # http-dos is not a dependency of anything and has to be explicit.
+        - name: COLLECTIONS
+          value: >-
+            yanis-kouidri/envoy
+            crowdsecurity/http-dos
+            crowdsecurity/discord-crawler-whitelist
+      # NOTE: crowdsecurity/whitelists stays enabled on purpose. It whitelists
+      # RFC1918, which is what stops a parsing mistake from banning the
+      # cloudflared pod and taking every public service down with it.
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+      # Per-machine panels in the CrowdSec dashboards read agent metrics, which
+      # the chart exposes on 6060 but does not scrape by default.
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+
+    appsec:
+      enabled: true
+      configs:
+        twenty-appsec-full.yaml: |
+          name: twenty/appsec-full
+          default_remediation: ban
+          inband_rules:
+            - crowdsecurity/base-config
+            - crowdsecurity/vpatch-*
+            - crowdsecurity/generic-*
+            - crowdsecurity/crs
+          outofband_rules:
+            - crowdsecurity/experimental-*
+      acquisitions:
+        - source: appsec
+          listen_addr: "0.0.0.0:7422"
+          path: /
+          # One merged config rather than a list of hub ones. Both
+          # crowdsecurity/virtual-patching and crowdsecurity/generic-rules pull
+          # in crowdsecurity/base-config, and listing them together loads it
+          # twice: "failed to compile the directive secrule: duplicated rule
+          # id 100", which crashloops the pod. Naming each rule set once avoids
+          # that while still loading all of them.
+          appsec_config: twenty/appsec-full
+          labels:
+            type: appsec
+      env:
+        - name: COLLECTIONS
+          value: >-
+            crowdsecurity/appsec-virtual-patching
+            crowdsecurity/appsec-generic-rules
+            crowdsecurity/appsec-crs-inband
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+
+    lapi:
+      # Registers the envoy bouncer at startup from BOUNCER_KEY_envoy, and
+      # enrolls into the CrowdSec console from ENROLL_KEY. Both live in the
+      # SOPS secret because this repository is public.
+      envFrom:
+        - secretRef:
+            name: crowdsec-bouncer-key
+      env:
+        - name: ENROLL_INSTANCE_NAME
+          value: twenty
+        - name: ENROLL_TAGS
+          value: k8s talos homelab
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      persistentVolume:
+        data:
+          enabled: true
+          storageClassName: longhorn
+          size: 2Gi
+        config:
+          enabled: true
+          storageClassName: longhorn
+          size: 128Mi
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true

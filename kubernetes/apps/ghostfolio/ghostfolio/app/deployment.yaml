@@ -1,0 +1,54 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ghostfolio
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ghostfolio
+  template:
+    metadata:
+      labels:
+        app: ghostfolio
+    spec:
+      containers:
+        - name: ghostfolio
+          image: docker.io/ghostfolio/ghostfolio:3.41.0
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3333"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-ghostfolio-app
+                  key: uri
+            - name: REDIS_HOST
+              value: ghostfolio-dragonfly.ghostfolio.svc.cluster.local
+            - name: REDIS_PORT
+              value: "6379"
+            - name: ACCESS_TOKEN_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: ghostfolio-secret
+                  key: ACCESS_TOKEN_SALT
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ghostfolio-secret
+                  key: JWT_SECRET_KEY
+          ports:
+            - containerPort: 3333
+              name: http
+          resources:
+            # A limit with no request makes the request equal to the limit, so
+            # the old 3500Mi limit reserved 3500Mi per replica. Measured peak
+            # over 24h is ~540Mi.
+            requests:
+              cpu: 10m
+              memory: 512Mi
+            limits:
+              memory: 1Gi

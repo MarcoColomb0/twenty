@@ -1,0 +1,23 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: intel-device-plugins-gpu
+spec:
+  dependsOn:
+    # supplies the GpuDevicePlugin CRD this release creates an instance of
+    - name: intel-device-plugins-operator
+      namespace: kube-system
+  interval: 1h
+  path: ./kubernetes/apps/kube-system/intel-device-plugins-gpu/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: kube-system
+  wait: true

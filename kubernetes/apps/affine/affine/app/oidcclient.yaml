@@ -1,0 +1,21 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: affine
+spec:
+  callbackUrls:
+    # The browser lands on the frontend route, which then posts the code to
+    # /api/oauth/callback. Both are registered because AFFiNE has moved this
+    # between releases and an unregistered redirect fails the flow outright.
+    - https://affine.${SECRET_DOMAIN}/oauth/callback
+    - https://affine.${SECRET_DOMAIN}/api/oauth/callback
+  logoutCallbackUrls:
+    - https://affine.${SECRET_DOMAIN}
+  pkceEnabled: true
+  skipConsent: true
+  secret:
+    name: affine-oidc
+    keys:
+      clientID: client_id
+      clientSecret: client_secret

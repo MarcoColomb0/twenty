@@ -1,0 +1,85 @@
+---
+clusterName: kubernetes
+
+talosVersion: "${talosVersion}"
+kubernetesVersion: "${kubernetesVersion}"
+
+endpoint: https://192.168.100.100:6443
+additionalApiServerCertSans: &sans
+  - "127.0.0.1"
+  - "192.168.100.100"
+  - "twenty.marco.wf"
+additionalMachineCertSans: *sans
+
+clusterPodNets:
+  - "10.42.0.0/16"
+clusterSvcNets:
+  - "10.43.0.0/16"
+
+# Disable built-in CNI to use Cilium
+cniConfig:
+  name: none
+
+# twenty-01 (.200) and twenty-virt01 (.201) were both VMs on one LattePanda N150,
+# so the pair only ever counted as a single failure domain -- losing the host took
+# two of four control plane nodes with it, which is what happened. Retired in
+# favour of physical boxes. This leaves two etcd members until a LattePanda
+# rejoins as a single node: quorum 2 of 2, so any node lost stops the API.
+nodes:
+  - hostname: "twenty-hp01"
+    ipAddress: "192.168.100.202"
+    nodeLabels:
+      # What Node Feature Discovery would set. The Intel GPU device plugin
+      # selects on it, and this is the only node with an iGPU.
+      intel.feature.node.kubernetes.io/gpu: "true"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/2494e85a994d8ac77dd6ca30df4a26912a78c8a538b314d42f6aba0eb9187c07
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "b0:0c:d1:53:aa:01"
+        dhcp: false
+        addresses:
+          - "192.168.100.202/24"
+        routes:
+          - gateway: "192.168.100.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.100.100"
+
+  - hostname: "twenty-asus01"
+    ipAddress: "192.168.100.203"
+    installDisk: "/dev/nvme0n1"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/d8a75d95c592d1c21e682d10cd8395fe3238b9e6d8f62628f5de90967e2de6db
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "04:42:1a:c9:3b:f4"
+        dhcp: false
+        addresses:
+          - "192.168.100.203/24"
+        routes:
+          - gateway: "192.168.100.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.100.100"
+
+# Global patches
+patches:
+  - "@./patches/global/machine-files.yaml"
+  - "@./patches/global/machine-kubelet.yaml"
+  - "@./patches/global/machine-network.yaml"
+  - "@./patches/global/machine-sysctls.yaml"
+  - "@./patches/global/machine-time.yaml"
+  - "@./patches/global/machine-longhorn.yaml"
+
+# Controller patches
+controlPlane:
+  patches:
+    - "@./patches/controller/cluster.yaml"

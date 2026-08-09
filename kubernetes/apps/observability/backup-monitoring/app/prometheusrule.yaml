@@ -1,0 +1,82 @@
+---
+# A dashboard only helps if someone opens it. These are the same facts as
+# alerts, so a backup that quietly stops reaches the phone instead of waiting
+# to be noticed.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backup-rules
+spec:
+  groups:
+    - name: volsync
+      rules:
+        - alert: VolSyncBackupOverdue
+          # VolSync raises this itself when a source misses its schedule. There
+          # is no "last sync timestamp" metric to compare against, so this is
+          # the signal it actually provides.
+          expr: volsync_volume_out_of_sync{role="source"} == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Backup overdue: {{ $labels.obj_namespace }}/{{ $labels.obj_name }}"
+            description: VolSync has missed the schedule for this volume.
+
+        - alert: VolSyncBackupMissing
+          # Nothing scraped at all: the ReplicationSource was deleted, or
+          # VolSync is not running. Silence looks identical to health on a
+          # dashboard, which is exactly why it is worth alerting on.
+          expr: absent(volsync_volume_out_of_sync{role="source"})
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: No VolSync sources are reporting
+            description: Either every ReplicationSource is gone or VolSync is down.
+
+    - name: cloudnative-pg-backup
+      rules:
+        - alert: PostgresWALArchiveStalled
+          # WAL archiving is what makes recovery land between base backups.
+          # If it stops, the recoverable window silently stops advancing.
+          expr: time() - cnpg_pg_stat_archiver_last_archived_time > 21600
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WAL not archived for 6h: {{ $labels.namespace }}"
+            description: Point-in-time recovery is frozen at the last archived segment.
+
+        - alert: PostgresWALArchiveFailing
+          expr: increase(cnpg_pg_stat_archiver_failed_count[1h]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WAL archive failures: {{ $labels.namespace }}"
+            description: barman-cloud is rejecting or failing to upload WAL segments.
+
+        - alert: PostgresBaseBackupStale
+          # Archived WAL is only replayable on top of a base backup. Without a
+          # recent one the restore window grows longer and longer.
+          expr: |
+            (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp > 0)
+            and on(namespace, pod)
+            (time() - barman_cloud_cloudnative_pg_io_last_available_backup_timestamp > 172800)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No base backup for 48h: {{ $labels.namespace }}"
+            description: Scheduled base backups appear to have stopped.
+
+        - alert: PostgresBackupFailed
+          expr: |
+            barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp
+              > barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Last backup failed: {{ $labels.namespace }}"
+            description: The most recent backup attempt failed and no newer one has succeeded.

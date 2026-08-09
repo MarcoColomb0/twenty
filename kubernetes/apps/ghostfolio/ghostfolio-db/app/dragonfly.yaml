@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/dragonflydb.io/dragonfly_v1alpha1.json
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: ghostfolio-dragonfly
+spec:
+  replicas: 1
+  args:
+    - --proactor_threads=3
+    - --default_lua_flags=allow-undeclared-keys
+    - --cluster_mode=emulated
+  resources:
+    requests:
+      cpu: 200m
+    limits:
+      memory: 1024Mi

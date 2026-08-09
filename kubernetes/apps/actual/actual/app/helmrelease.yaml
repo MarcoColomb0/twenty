@@ -1,0 +1,100 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: actual
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: actual
+  interval: 1h
+  values:
+    controllers:
+      actual:
+        # A single ReadWriteOnce volume holds the budget files, so two pods
+        # cannot run at once.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/actualbudget/actual-server
+              tag: "26.8.0"
+            env:
+              ACTUAL_PORT: &port 5006
+              ACTUAL_DATA_DIR: /data
+              ACTUAL_OPENID_DISCOVERY_URL: https://id.${SECRET_DOMAIN}/.well-known/openid-configuration
+              ACTUAL_OPENID_PROVIDER_NAME: Pocket ID
+              # Actual needs to know its own address to hand the provider a
+              # redirect back; the callback is /openid/callback under it.
+              ACTUAL_OPENID_SERVER_HOSTNAME: https://actual.${SECRET_DOMAIN}
+              # No server password as a way in. This is financial data, so the
+              # passkey behind Pocket ID should be the only key to it rather
+              # than one option beside a shared password.
+              ACTUAL_OPENID_ENFORCE: "true"
+              ACTUAL_OPENID_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc actual-oidc
+                    key: client_id
+              ACTUAL_OPENID_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: *port
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 25m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: actual-data
+        globalMounts:
+          - path: /data
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        # Internal for now. Everything needed to publish it is already here --
+        # OIDC is enforced and the external gateway carries the bouncer and
+        # AppSec -- but budgets are the most sensitive thing on this cluster, so
+        # that is a decision rather than a default.
+        hostnames:
+          - "actual.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

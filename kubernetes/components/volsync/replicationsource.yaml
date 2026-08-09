@@ -1,0 +1,44 @@
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: "${APP}"
+spec:
+  sourcePVC: "${VOLSYNC_CLAIM:=${APP}}"
+  trigger:
+    # Staggered per app via VOLSYNC_SCHEDULE so several movers do not compete
+    # for the same uplink at once.
+    schedule: "${VOLSYNC_SCHEDULE:=0 3 * * *}"
+  restic:
+    repository: "${APP}-volsync-restic"
+    # Direct by default. Snapshot sounds better -- a consistent point-in-time
+    # read -- but on Longhorn it restores the snapshot into a whole new volume
+    # first, so every run provisions a claim the size of the source's *request*
+    # and copies the contents into it. For Immich that is a 150Gi claim and
+    # 56GB copied nightly, and with over-provisioning capped at 100% no node
+    # could even schedule it:
+    #   precheck new replica failed: insufficient storage
+    # Direct reads the source volume itself: no second copy, no extra
+    # provisioning. Databases do not rely on this -- they are backed up by
+    # barman-cloud, which takes its own consistent snapshot -- so what is left
+    # here is file data where reading live is fine.
+    copyMethod: "${VOLSYNC_COPYMETHOD:=Direct}"
+    volumeSnapshotClassName: longhorn
+    storageClassName: "${VOLSYNC_STORAGECLASS:=longhorn-single}"
+    # restic keeps a local index cache. Too small and every run re-reads the
+    # repository metadata over the network.
+    cacheCapacity: "${VOLSYNC_CACHE_CAPACITY:=8Gi}"
+    cacheStorageClassName: "${VOLSYNC_CACHE_STORAGECLASS:=longhorn-single}"
+    accessModes:
+      - "ReadWriteOnce"
+    moverSecurityContext:
+      runAsUser: ${VOLSYNC_UID:=1000}
+      runAsGroup: ${VOLSYNC_GID:=1000}
+      fsGroup: ${VOLSYNC_GID:=1000}
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 6
+    # Pruning rewrites the repository, so it is deliberately infrequent: it is
+    # the expensive operation, and forget alone already drops the snapshots.
+    pruneIntervalDays: 14

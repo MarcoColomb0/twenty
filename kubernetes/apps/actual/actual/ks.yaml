@@ -1,0 +1,24 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: actual
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/actual/actual/app
+  postBuild:
+    substitute:
+      APP: actual
+      VOLSYNC_CLAIM: actual-data
+      VOLSYNC_SCHEDULE: "0 5 * * *"
+      VOLSYNC_CACHE_CAPACITY: 1Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: actual
+  wait: false

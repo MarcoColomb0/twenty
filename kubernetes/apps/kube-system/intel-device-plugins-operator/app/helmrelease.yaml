@@ -1,0 +1,23 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: intel-device-plugins-operator
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: intel-device-plugins-operator
+  interval: 1h
+  values:
+    # Supplies the GpuDevicePlugin CRD and reconciles it into a DaemonSet that
+    # advertises gpu.intel.com/i915. The point of the operator over a hostPath
+    # mount is the device cgroup: hostPath shows the render node to the
+    # container but never whitelists char device 226:128, so opening it returns
+    # EPERM. A device plugin allocates it properly, which keeps Immich running
+    # as non-root with all capabilities dropped.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 100Mi
+      limits:
+        memory: 200Mi

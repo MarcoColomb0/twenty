@@ -1,0 +1,20 @@
+# Lives with VolSync rather than with the snapshot controller: Flux dry-runs a
+# whole Kustomization at once, so a VolumeSnapshotClass sitting beside the chart
+# that installs its CRD fails validation before that chart has ever run. VolSync
+# already waits for the controller, and is the only consumer.
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: longhorn
+  annotations:
+    snapshot.storage.kubernetes.io/is-default-class: "true"
+driver: driver.longhorn.io
+# Delete: these snapshots exist only long enough for a mover to read a
+# consistent copy. The durable copy is the restic repository on the Pi, so
+# keeping the snapshot after the backup would pin space on Longhorn for nothing.
+deletionPolicy: Delete
+parameters:
+  # A Longhorn-internal snapshot rather than a full backup to an external
+  # target: fast, local, and exactly what a backup source needs.
+  type: snap

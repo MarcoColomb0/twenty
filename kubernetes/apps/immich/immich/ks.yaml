@@ -1,0 +1,31 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: immich
+spec:
+  dependsOn:
+    # Reads postgres-immich-app, which CNPG publishes beside the Cluster in
+    # this namespace.
+    - name: immich-db
+      namespace: immich
+  interval: 1h
+  path: ./kubernetes/apps/immich/immich/app
+  postBuild:
+    # Everything the volsync component needs. Adding backup to another app is
+    # these three lines plus the component reference -- no new secret, because
+    # the credentials live once in cluster-secrets.
+    substitute:
+      APP: immich
+      VOLSYNC_CLAIM: immich-data
+      VOLSYNC_CACHE_CAPACITY: 16Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: immich
+  wait: false

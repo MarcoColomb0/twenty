@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/postgresql.cnpg.io/cluster_v1.json
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-immich
+spec:
+  instances: 2
+  # Immich needs VectorChord for smart search and face embeddings; the stock
+  # CloudNativePG image does not ship it. Postgres 18 here matches the other
+  # clusters, which run 18.4.
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.0-0.5.3
+  storage:
+    size: 20Gi
+    storageClass: longhorn
+  postgresql:
+    shared_preload_libraries:
+      - vchord.so
+  # Immich expects superuser on its own role: it creates and upgrades
+  # extensions itself during schema migrations.
+  enableSuperuserAccess: true
+  # Continuous WAL archiving. The ScheduledBackup takes base backups; this is
+  # what lets recovery land between them rather than only on one.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "immich"
+  bootstrap:
+    initdb:
+      database: immich
+      owner: immich
+      postInitApplicationSQL:
+        # CASCADE pulls in pgvector, which vchord builds on, and cube, which
+        # earthdistance needs.
+        - CREATE EXTENSION IF NOT EXISTS "vchord" CASCADE;
+        - CREATE EXTENSION IF NOT EXISTS "cube" CASCADE;
+        - CREATE EXTENSION IF NOT EXISTS "earthdistance" CASCADE;
+      postInitSQL:
+        - ALTER USER immich WITH SUPERUSER;
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 2Gi

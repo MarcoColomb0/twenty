@@ -1,0 +1,24 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: karakeep
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/karakeep/karakeep/app
+  postBuild:
+    substitute:
+      APP: karakeep
+      VOLSYNC_CLAIM: karakeep-data
+      VOLSYNC_SCHEDULE: "30 4 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: karakeep
+  wait: false

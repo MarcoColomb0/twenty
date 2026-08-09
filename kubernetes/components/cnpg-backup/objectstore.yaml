@@ -1,0 +1,28 @@
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: "${APP}"
+spec:
+  configuration:
+    # One prefix per cluster inside the postgres bucket.
+    destinationPath: "s3://${CNPG_BUCKET:=twenty-postgres}/${APP}"
+    endpointURL: "${VOLSYNC_S3_ENDPOINT}"
+    s3Credentials:
+      accessKeyId:
+        name: "${APP}-barman-s3"
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: "${APP}-barman-s3"
+        key: ACCESS_SECRET_KEY
+    # Compressed before upload, so the Raspberry Pi stores less and does none of
+    # the work. WAL compresses especially well.
+    wal:
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+      immediateCheckpoint: false
+  # Barman expires its own backups. Bucket versioning is what protects against
+  # a delete going wrong, so nothing here needs to keep history forever.
+  retentionPolicy: "${CNPG_RETENTION:=30d}"

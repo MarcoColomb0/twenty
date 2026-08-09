@@ -1,0 +1,29 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: affine
+spec:
+  dependsOn:
+    # Reads postgres-affine-app, which CNPG publishes beside the Cluster in
+    # this namespace.
+    - name: affine-db
+      namespace: affine
+  interval: 1h
+  path: ./kubernetes/apps/affine/affine/app
+  postBuild:
+    substitute:
+      APP: affine
+      VOLSYNC_CLAIM: affine-storage
+      VOLSYNC_SCHEDULE: "0 4 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: affine
+  wait: false

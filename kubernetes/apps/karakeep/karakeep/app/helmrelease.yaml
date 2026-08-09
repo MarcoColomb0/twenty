@@ -1,0 +1,188 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: karakeep
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: karakeep
+  interval: 1h
+  values:
+    controllers:
+      karakeep:
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          # Upstream runs three services. They share a pod here rather than
+          # three Deployments: both dependencies are addressed over localhost,
+          # which keeps the crawler and the search index off the cluster network
+          # entirely -- neither has any authentication worth exposing.
+          app:
+            image:
+              repository: ghcr.io/karakeep-app/karakeep
+              tag: "0.32.0"
+            env:
+              DATA_DIR: /data
+              MEILI_ADDR: http://localhost:7700
+              BROWSER_WEB_URL: http://localhost:9222
+              NEXTAUTH_URL: https://karakeep.${SECRET_DOMAIN}
+              DISABLE_NEW_RELEASE_CHECK: "true"
+              # DISABLE_SIGNUPS gates OAuth account creation as well as the
+              # local form, so closing it left Pocket ID users with no way to
+              # get an account at all. Signups stay open and password auth is
+              # what is turned off instead -- Pocket ID decides who may sign in,
+              # and an account exists because it vouched for them.
+              DISABLE_PASSWORD_AUTH: "true"
+              OAUTH_WELLKNOWN_URL: https://id.${SECRET_DOMAIN}/.well-known/openid-configuration
+              OAUTH_PROVIDER_NAME: Pocket ID
+              OAUTH_SCOPE: openid email profile
+              # The first sign-in has no local account to attach to. Without
+              # this, matching on a verified email from the provider is refused
+              # and the login dead-ends.
+              OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING: "true"
+              OAUTH_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc karakeep-oidc
+                    key: client_id
+              OAUTH_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            envFrom:
+              - secretRef:
+                  name: karakeep-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/health
+                    port: &port 3000
+                  initialDelaySeconds: 20
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+                # What s6-overlay's preinit needs to take ownership of /run
+                # before handing off to the app as an unprivileged user.
+                add:
+                  - "CHOWN"
+                  - "DAC_OVERRIDE"
+                  - "FOWNER"
+                  - "SETUID"
+                  - "SETGID"
+            resources:
+              requests:
+                cpu: 50m
+                memory: 384Mi
+              limits:
+                memory: 1Gi
+          chrome:
+            image:
+              repository: gcr.io/zenika-hub/alpine-chrome
+              tag: "124"
+            args:
+              # --no-sandbox because Chrome's own sandbox needs privileges this
+              # pod does not have. It only ever loads pages Karakeep asks it to,
+              # and it listens on localhost inside the pod.
+              - --no-sandbox
+              - --disable-gpu
+              - --disable-dev-shm-usage
+              - --remote-debugging-address=0.0.0.0
+              - --remote-debugging-port=9222
+              - --hide-scrollbars
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 768Mi
+          meilisearch:
+            image:
+              repository: docker.io/getmeili/meilisearch
+              tag: v1.41.0
+            env:
+              MEILI_NO_ANALYTICS: "true"
+              MEILI_ENV: production
+              MEILI_DB_PATH: /meili_data
+            envFrom:
+              - secretRef:
+                  name: karakeep-secret
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 768Mi
+    defaultPodOptions:
+      securityContext:
+        # Karakeep's image is built on s6-overlay, which starts as root, fixes
+        # up /run and then drops privileges itself. Forcing uid 1000 stops it
+        # before the app runs:
+        #   /run belongs to uid 0 instead of 1000, has insecure and/or
+        #   unworkable permissions, and we're lacking the privileges to fix it
+        # Each image is left to pick its own user; fsGroup still hands the pod
+        # its volumes.
+        runAsNonRoot: false
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: karakeep-data
+        advancedMounts:
+          karakeep:
+            app:
+              - path: /data
+      meili:
+        existingClaim: karakeep-meili
+        advancedMounts:
+          karakeep:
+            meilisearch:
+              - path: /meili_data
+                # A subdirectory, because the root of a fresh ext4 volume is not
+                # empty -- it has lost+found, and Meilisearch reads that as an
+                # existing database it cannot place:
+                #   failed to infer the version of the database
+                subPath: data
+      # Chrome writes far more to /tmp than the default 64MiB shared memory
+      # allows, which is also why --disable-dev-shm-usage is set above.
+      tmp:
+        type: emptyDir
+        advancedMounts:
+          karakeep:
+            chrome:
+              - path: /tmp
+    service:
+      app:
+        controller: karakeep
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "karakeep.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

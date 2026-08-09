@@ -1,0 +1,114 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: immich
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: immich
+  interval: 1h
+  values:
+    controllers:
+      immich:
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/immich-app/immich-server
+              tag: v3.1.0
+            env:
+              IMMICH_PORT: &port 2283
+              IMMICH_MEDIA_LOCATION: /data
+              DB_HOSTNAME: postgres-immich-rw.immich.svc.cluster.local
+              DB_PORT: "5432"
+              DB_DATABASE_NAME: immich
+              DB_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    name: &dbsecret postgres-immich-app
+                    key: username
+              DB_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: *dbsecret
+                    key: password
+              REDIS_HOSTNAME: immich-dragonfly.immich.svc.cluster.local
+              REDIS_PORT: "6379"
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/server/ping
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/server/ping
+                    port: *port
+                  # The first boot runs schema migrations against an empty
+                  # database, which takes considerably longer than a restart.
+                  initialDelaySeconds: 15
+                  periodSeconds: 10
+                  failureThreshold: 60
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+                # Allocated by the Intel GPU device plugin, which is what
+                # actually grants the device cgroup entry that hostPath could
+                # not. It also places the pod: only nodes advertising this
+                # resource are candidates, so no hostname pin is needed.
+                gpu.intel.com/i915: 1
+              limits:
+                memory: 3Gi
+                gpu.intel.com/i915: 1
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      # 100GB of phone photos today. Longhorn keeps two replicas, so this
+      # reserves 150Gi twice over; the two smaller nodes have ~217GiB free
+      # each, which fits. The class allows expansion, so growing it later does
+      # not mean recreating the volume.
+      data:
+        existingClaim: immich-data
+        globalMounts:
+          - path: /data
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        # LAN only. Immich itself is never published; the only thing reachable
+        # from outside is immich-proxy, which serves shared links alone.
+        hostnames:
+          - "immich.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

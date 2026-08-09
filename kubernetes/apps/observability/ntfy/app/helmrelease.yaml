@@ -1,0 +1,94 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ntfy
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: ntfy
+  interval: 1h
+  values:
+    controllers:
+      ntfy:
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: docker.io/binwiederhier/ntfy
+              tag: v2.26.3
+            args:
+              - "serve"
+            env:
+              NTFY_BASE_URL: https://ntfy.${SECRET_DOMAIN}
+              NTFY_LISTEN_HTTP: :80
+              NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+              NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+              # Published, so anonymous access is refused outright. Users,
+              # access rules and the Alertmanager token are all declared in the
+              # Secret and applied by ntfy at startup -- no CLI, nothing created
+              # by hand.
+              NTFY_AUTH_DEFAULT_ACCESS: deny-all
+              NTFY_BEHIND_PROXY: "true"
+              NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
+            envFrom:
+              - secretRef:
+                  name: ntfy-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /v1/health
+                    port: &port 80
+                  initialDelaySeconds: 10
+                  periodSeconds: 20
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: ntfy-data
+        globalMounts:
+          - path: /var/lib/ntfy
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        annotations:
+          # Its own health endpoint, since / is the web app shell.
+          gatus.home-operations.com/endpoint: |
+            path: /v1/health
+        # Published on purpose: a notifier that only works at home cannot tell
+        # you the house is on fire while you are out.
+        hostnames:
+          - "ntfy.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

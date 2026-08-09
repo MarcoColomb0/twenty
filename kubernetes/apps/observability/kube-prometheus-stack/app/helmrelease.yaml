@@ -1,0 +1,310 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: kube-prometheus-stack
+  interval: 1h
+  values:
+    crds:
+      enabled: true
+
+    # Talos exposes the control plane metrics endpoints via the patches in
+    # talos/patches/controller/cluster.yaml, they are scraped as static endpoints
+    # since the components run as static pods outside the Kubernetes API.
+    kubeApiServer:
+      enabled: true
+    kubelet:
+      enabled: true
+    coreDns:
+      enabled: true
+    kubeDns:
+      enabled: false
+    # cilium runs with kubeProxyReplacement, Talos has cluster.proxy.disabled
+    kubeProxy:
+      enabled: false
+    kubeControllerManager:
+      enabled: true
+      endpoints: &controlPlane
+        - 192.168.100.202
+        - 192.168.100.203
+      service:
+        enabled: true
+        port: 10257
+        targetPort: 10257
+      serviceMonitor:
+        https: true
+        insecureSkipVerify: true
+    kubeScheduler:
+      enabled: true
+      endpoints: *controlPlane
+      service:
+        enabled: true
+        port: 10259
+        targetPort: 10259
+      serviceMonitor:
+        https: true
+        insecureSkipVerify: true
+    kubeEtcd:
+      enabled: true
+      endpoints: *controlPlane
+      service:
+        enabled: true
+        port: 2381
+        targetPort: 2381
+      serviceMonitor:
+        scheme: http
+
+    prometheusOperator:
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 256Mi
+
+    prometheus:
+      prometheusSpec:
+        replicas: 1
+        # Adopt the ServiceMonitors/PodMonitors that already live in this repo
+        # (cilium, envoy-gateway, flux-operator, longhorn, echo) instead of only
+        # the ones this chart labels itself.
+        podMonitorSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        scrapeConfigSelectorNilUsesHelmValues: false
+        serviceMonitorSelectorNilUsesHelmValues: false
+        # 14d of samples was heading for roughly 10GiB on a 20Gi volume that
+        # Longhorn replicates twice. retentionSize stays as the backstop; it
+        # sits above what 5d can produce, so time is what actually governs.
+        retention: 5d
+        retentionSize: 18GB
+        walCompression: true
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: longhorn
+              accessModes:
+                - "ReadWriteOnce"
+              resources:
+                requests:
+                  storage: 20Gi
+        resources:
+          requests:
+            cpu: 100m
+          limits:
+            memory: 2Gi
+
+    alertmanager:
+      # Alerts had nowhere to go: the chart's default routes everything into a
+      # "null" receiver, so the stack evaluated rules and then discarded the
+      # result. That is also why nothing noticed Alertmanager itself being dead
+      # for two days.
+      config:
+        route:
+          receiver: ntfy
+          group_by:
+            - alertname
+            - job
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+          routes:
+            # Watchdog fires constantly by design, as proof the pipeline works.
+            # It is the one alert worth dropping.
+            - receiver: "null"
+              matchers:
+                - alertname = "Watchdog"
+            - receiver: "null"
+              matchers:
+                - severity = "info"
+        receivers:
+          - name: "null"
+          - name: ntfy
+            webhook_configs:
+              # ntfy ships a template for Alertmanager's payload, so no
+              # translating sidecar is needed to make this readable.
+              - url: http://ntfy.observability.svc.cluster.local/alerts?template=alertmanager
+                send_resolved: true
+                http_config:
+                  authorization:
+                    type: Bearer
+                    # Mounted by alertmanagerSpec.secrets below. The token stays
+                    # in SOPS rather than being written into this file.
+                    credentials_file: /etc/alertmanager/secrets/alertmanager-ntfy-token/token
+      alertmanagerSpec:
+        secrets:
+          - alertmanager-ntfy-token
+        replicas: 1
+        retention: 120h
+        storage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: longhorn
+              accessModes:
+                - "ReadWriteOnce"
+              resources:
+                requests:
+                  storage: 2Gi
+        # The memory request is stated rather than left out. Omitting it does
+        # not mean "no request": prometheus-operator fills in its own default of
+        # 200Mi, which was larger than the 128Mi limit here, so the StatefulSet
+        # was rejected outright and Alertmanager never ran at all --
+        #   resources.requests: Invalid value: "200Mi": must be less than or
+        #   equal to memory limit of 128Mi
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+
+    grafana:
+      admin:
+        existingSecret: grafana-admin-secret
+        userKey: admin-user
+        passwordKey: admin-password
+      defaultDashboardsTimezone: browser
+      # Client credentials are minted by the pocket-id-operator into the
+      # grafana-oidc Secret alongside this release (see oidcclient.yaml).
+      envValueFrom:
+        GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+          secretKeyRef:
+            name: grafana-oidc
+            key: client_id
+        GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+          secretKeyRef:
+            name: grafana-oidc
+            key: client_secret
+      grafana.ini:
+        server:
+          root_url: https://grafana.${SECRET_DOMAIN}
+        analytics:
+          check_for_updates: false
+          check_for_plugin_updates: false
+          reporting_enabled: false
+        auth:
+          # Pocket ID is the only way in through the browser: the username and
+          # password form is gone, so a Grafana-local password cannot be
+          # phished or reused. The admin account still exists and still answers
+          # on the HTTP API over basic auth, which is what the chart uses and
+          # what gets you back in if Pocket ID is ever unreachable. Recovery
+          # otherwise is flipping this back in git.
+          disable_login_form: true
+        auth.generic_oauth:
+          enabled: true
+          name: Pocket ID
+          icon: signin
+          # Required for the first login: no Grafana user exists yet for an
+          # OIDC identity, so sign-up has to create one.
+          allow_sign_up: true
+          use_pkce: true
+          scopes: openid profile email groups
+          auth_url: https://id.${SECRET_DOMAIN}/authorize
+          token_url: https://id.${SECRET_DOMAIN}/api/oidc/token
+          api_url: https://id.${SECRET_DOMAIN}/api/oidc/userinfo
+          # Members of the grafana-admins group get Admin, everyone else Viewer.
+          role_attribute_path: "contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'"
+          # Do not refuse the login outright when the groups claim is absent.
+          role_attribute_strict: false
+      # Dashboards for the apps that already expose metrics but ship no
+      # dashboard of their own. Fetched at pod start by the chart's
+      # download-dashboards init container. gnetId entries come from
+      # grafana.com; url entries are pinned to a tag so they cannot drift.
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+            - name: cluster-apps
+              orgId: 1
+              folder: Cluster Apps
+              type: file
+              disableDeletion: false
+              editable: true
+              options:
+                path: /var/lib/grafana/dashboards/cluster-apps
+      dashboards:
+        cluster-apps:
+          longhorn:
+            gnetId: 16888 # Longhorn Monitoring & Backups
+            revision: 14
+            datasource: Prometheus
+          cloudnative-pg:
+            gnetId: 20417 # CloudNativePG
+            revision: 4
+            datasource: Prometheus
+          cert-manager:
+            gnetId: 11001 # cert-manager
+            revision: 1
+            datasource: Prometheus
+          blocky:
+            url: https://raw.githubusercontent.com/0xERR0R/blocky/v0.33.0/docs/blocky-grafana.json
+            datasource: Prometheus
+          envoy-gateway:
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
+            datasource: Prometheus
+          envoy-proxy:
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-proxy-global.json
+            datasource: Prometheus
+          envoy-clusters:
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-clusters.json
+            datasource: Prometheus
+          flux-performance:
+            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-performance.json
+            datasource: Prometheus
+          flux-k8s-api:
+            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-k8s-api-performance.json
+            datasource: Prometheus
+          # crowdsecurity/grafana-dashboards publishes no tags, so these are
+          # pinned to a commit instead. dashboards_v5 is the set that matches
+          # the 1.7.x engine running in security.
+          crowdsec-overview:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/Crowdsec%20Overview.json
+            datasource: Prometheus
+          crowdsec-insight:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/Crowdsec%20Insight.json
+            datasource: Prometheus
+          crowdsec-per-machine:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/Crowdsec%20Details%20per%20Machine.json
+            datasource: Prometheus
+          crowdsec-lapi:
+            url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/LAPI%20Metrics.json
+            datasource: Prometheus
+      # Pick up the dashboards shipped by other apps, e.g. cilium sets
+      # dashboards.enabled and operator.dashboards.enabled in kube-system.
+      sidecar:
+        dashboards:
+          enabled: true
+          labelValue: ""
+          searchNamespace: ALL
+        datasources:
+          enabled: true
+      persistence:
+        enabled: true
+        storageClassName: longhorn
+        size: 5Gi
+      # The Longhorn PVC is ReadWriteOnce, so a rolling update deadlocks: the new
+      # pod cannot attach the volume while the old one still holds it.
+      deploymentStrategy:
+        type: Recreate
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 512Mi
+
+    kube-state-metrics:
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 256Mi
+
+    prometheus-node-exporter:
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 64Mi

@@ -1,0 +1,32 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: spegel
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: spegel
+  interval: 1h
+  values:
+    spegel:
+      # Talos keeps its containerd registry config under /etc/cri/conf.d rather
+      # than the chart's /etc/containerd/certs.d default; cri.toml on the nodes
+      # sets config_path to exactly this. Spegel writes the mirror hosts.toml
+      # files here itself, so no registry config is declared by hand.
+      containerdRegistryConfigPath: /etc/cri/conf.d/hosts
+
+      # Empty means every registry is mirrored, which is what we want: the WAN
+      # link is the constraint, not any particular upstream.
+      mirroredRegistries: []
+
+    serviceMonitor:
+      enabled: true
+
+    grafanaDashboard:
+      enabled: true
+      mode: Sidecar
+      # The kube-prometheus-stack sidecar watches all namespaces for this label
+      # and ignores its value.
+      labels:
+        grafana_dashboard: "1"

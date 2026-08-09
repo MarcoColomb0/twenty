@@ -1,0 +1,199 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kromgo
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: kromgo
+  interval: 1h
+  values:
+    config:
+      prometheus: http://prometheus-operated.observability.svc.cluster.local:9090
+
+      gallery:
+        enabled: true
+
+      cache:
+        enabled: true
+        maxAge: 300
+
+      defaults:
+        badge:
+          style: flat
+        graph:
+          theme: dark
+          fill: true
+          legend: false
+          width: 900
+          height: 220
+          maxDuration: 7d
+
+      badges:
+        # --- cluster identity -------------------------------------------------
+        - id: talos_version
+          title: Talos
+          query: node_os_info{name="Talos"}
+          valueExpr: labels[?"version_id"].orValue("unknown")
+          colorExpr: '"blue"'
+          icon: si:talos
+
+        - id: kubernetes_version
+          title: Kubernetes
+          query: kubernetes_build_info{service="kubernetes"}
+          valueExpr: labels[?"git_version"].orValue("unknown")
+          colorExpr: '"blue"'
+          icon: si:kubernetes
+
+        - id: flux_version
+          title: Flux
+          query: flux_instance_info
+          valueExpr: labels[?"revision"].orValue("unknown").split("@")[0]
+          colorExpr: '"blue"'
+          icon: si:flux
+
+        # --- cluster size and health -----------------------------------------
+        - id: cluster_node_count
+          title: Nodes
+          query: count(count by (node) (kube_node_status_condition{condition="Ready"}))
+          valueExpr: string(int(result))
+          colorExpr: '"green"'
+          icon: mdi:server-outline
+
+        - id: cluster_pod_count
+          title: Pods
+          query: sum(kube_pod_status_phase{phase="Running"})
+          valueExpr: string(int(result))
+          colorExpr: '"green"'
+          icon: mdi:cube-outline
+
+        - id: cluster_cpu_usage
+          title: CPU
+          query: round(cluster:node_cpu:ratio_rate5m * 100, 0.1)
+          valueExpr: humanizeFloat(result) + "%"
+          colorExpr: 'colorScale(result, [35.0, 75.0], ["green", "orange", "red"])'
+          icon: mdi:cpu-64-bit
+
+        - id: cluster_memory_usage
+          title: Memory
+          query: round((1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100, 0.1)
+          valueExpr: humanizeFloat(result) + "%"
+          colorExpr: 'colorScale(result, [50.0, 80.0], ["green", "orange", "red"])'
+          icon: mdi:memory
+
+        - id: cluster_age
+          title: Age
+          query: round(time() - min(kube_node_created))
+          valueExpr: humanizeDurationDays(result)
+          colorExpr: '"blue"'
+          icon: mdi:cake-variant-outline
+
+        - id: cluster_uptime
+          title: Uptime
+          query: round(avg(node_time_seconds - node_boot_time_seconds))
+          valueExpr: humanizeDurationDays(result)
+          colorExpr: '"blue"'
+          icon: mdi:clock-outline
+
+        - id: cluster_alert_count
+          title: Alerts
+          # Watchdog always fires by design, so it is subtracted out
+          query: sum(alertmanager_alerts{state="active"}) - 1
+          valueExpr: string(int(result))
+          colorExpr: 'colorScale(result, [1.0], ["green", "red"])'
+          icon: mdi:bell-outline
+
+        # --- storage ----------------------------------------------------------
+        - id: longhorn_volume_count
+          title: Volumes
+          query: count(longhorn_volume_state)
+          valueExpr: string(int(result))
+          colorExpr: '"green"'
+          icon: mdi:database-outline
+
+        - id: longhorn_capacity_used
+          title: Disk Used
+          query: round(sum(longhorn_node_storage_usage_bytes) / sum(longhorn_node_storage_capacity_bytes) * 100, 0.1)
+          valueExpr: 'math.isNaN(result) ? "n/a" : humanizeFloat(result) + "%"'
+          colorExpr: 'colorScale(result, [60.0, 85.0], ["green", "orange", "red"])'
+          icon: mdi:harddisk
+
+        - id: longhorn_capacity_total
+          title: Disk Total
+          query: sum(longhorn_node_storage_capacity_bytes)
+          valueExpr: humanizeBytes(result)
+          colorExpr: '"blue"'
+          icon: mdi:harddisk-plus
+
+        # --- network ----------------------------------------------------------
+        - id: cluster_network_rx
+          title: Network In
+          query: sum(rate(node_network_receive_bytes_total{device=~"e(n|th).*"}[5m]))
+          valueExpr: humanizeBytes(result) + "/s"
+          colorExpr: '"blue"'
+          icon: mdi:download-network-outline
+
+        - id: cluster_network_tx
+          title: Network Out
+          query: sum(rate(node_network_transmit_bytes_total{device=~"e(n|th).*"}[5m]))
+          valueExpr: humanizeBytes(result) + "/s"
+          colorExpr: '"blue"'
+          icon: mdi:upload-network-outline
+
+        - id: envoy_request_rate
+          title: Requests
+          query: sum(rate(envoy_http_downstream_rq_total[5m]))
+          valueExpr: 'math.isNaN(result) ? "0/s" : humanizeFloat(math.round(result * 10.0) / 10.0) + "/s"'
+          colorExpr: '"blue"'
+          icon: si:envoyproxy
+
+      graphs:
+        - id: cluster_cpu
+          title: CPU Usage
+          query: cluster:node_cpu:ratio_rate5m * 100
+          valueExpr: string(int(result)) + "%"
+          yMin: 0
+          yMax: 100
+          markLine:
+            - average
+
+        - id: cluster_memory
+          title: Memory Usage
+          query: (1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100
+          valueExpr: string(int(result)) + "%"
+          yMin: 0
+          yMax: 100
+          markLine:
+            - average
+
+        - id: cluster_pods
+          title: Running Pods
+          query: sum(kube_pod_status_phase{phase="Running"})
+          valueExpr: string(int(result))
+          markLine:
+            - average
+
+        - id: cluster_network
+          title: Network Throughput
+          query: sum(rate(node_network_receive_bytes_total{device=~"e(n|th).*"}[5m]))
+          valueExpr: humanizeBytes(result) + "/s"
+
+    httpRoute:
+      enabled: true
+      parentRefs:
+        - name: envoy-external
+          namespace: network
+          sectionName: https
+      hostnames:
+        - "{{ .Release.Name }}.${SECRET_DOMAIN}"
+
+    monitoring:
+      serviceMonitor:
+        enabled: true
+
+    resources:
+      requests:
+        cpu: 10m
+      limits:
+        memory: 128Mi

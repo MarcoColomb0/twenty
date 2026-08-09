@@ -1,0 +1,13 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: immich
+
+components:
+  - ../../components/sops
+
+resources:
+  - ./namespace.yaml
+  - ./immich-db/ks.yaml
+  - ./immich/ks.yaml
+  - ./immich-proxy/ks.yaml
