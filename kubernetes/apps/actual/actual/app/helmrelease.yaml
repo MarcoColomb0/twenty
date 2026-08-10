@@ -84,14 +84,10 @@ spec:
             port: *port
     route:
       app:
-        # Internal for now. Everything needed to publish it is already here --
-        # OIDC is enforced and the external gateway carries the bouncer and
-        # AppSec -- but budgets are the most sensitive thing on this cluster, so
-        # that is a decision rather than a default.
         hostnames:
           - "actual.${SECRET_DOMAIN}"
         parentRefs:
-          - name: envoy-internal
+          - name: envoy-external
             namespace: network
             sectionName: https
         rules:

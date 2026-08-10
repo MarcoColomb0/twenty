@@ -70,6 +70,26 @@ nodes:
         vip:
           ip: "192.168.100.100"
 
+  - hostname: "twenty-lp01"
+    ipAddress: "192.168.100.201"
+    installDisk: "/dev/nvme0n1"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/2494e85a994d8ac77dd6ca30df4a26912a78c8a538b314d42f6aba0eb9187c07
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "04:42:1a:c9:3b:f4"
+        dhcp: false
+        addresses:
+          - "192.168.100.201/24"
+        routes:
+          - gateway: "192.168.100.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.100.100"
+
 # Global patches
 patches:
   - "@./patches/global/machine-files.yaml"
