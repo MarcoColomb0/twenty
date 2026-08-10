@@ -24,8 +24,16 @@ spec:
           podName: envoy-external-*
           program: envoy
       env:
+        # actual-budget-whitelist is a parser, not a collection -- it has no
+        # collection wrapper on the hub, so it cannot go in COLLECTIONS below.
+        # Actual fetches its own migration files over HTTP on startup, and
+        # GET /data/migrations/*.sql looks exactly like someone probing for a
+        # database dump. Without this the app bans itself from the external
+        # gateway.
         - name: PARSERS
-          value: crowdsecurity/cri-logs
+          value: >-
+            crowdsecurity/cri-logs
+            crowdsecurity/actual-budget-whitelist
         # yanis-kouidri/envoy pulls in crowdsecurity/base-http-scenarios and
         # crowdsecurity/http-cve as dependencies, so neither is listed here.
         # http-dos is not a dependency of anything and has to be explicit.
