@@ -42,6 +42,25 @@ spec:
             yanis-kouidri/envoy
             crowdsecurity/http-dos
             crowdsecurity/discord-crawler-whitelist
+        # http-crawl-non_statics bans on 40 distinct non-static filenames per
+        # source IP and hostname, leaking one per 0.5s. That fits a content site
+        # being scraped; it does not fit a single-page app, which fires dozens of
+        # distinct API paths on one page load. Measured from the access logs: one
+        # visit produced 82 distinct filenames on id.marco.wf and 92-140 on
+        # actual.marco.wf, against a capacity of 40. Real users on Italian
+        # residential ISPs were banned just for opening the login page.
+        #
+        # It also self-sustained: once banned, the bouncer answers 403, and those
+        # 403s are still parsed as non-static GETs, so the bucket refilled and
+        # renewed the ban.
+        #
+        # It arrives as a dependency of crowdsecurity/base-http-scenarios via
+        # yanis-kouidri/envoy, so it cannot be dropped from COLLECTIONS above.
+        # DISABLE_SCENARIOS makes the entrypoint run "cscli scenarios remove".
+        # Everything published here sits behind Pocket ID, so crawl detection was
+        # buying very little; http-dos and the AppSec rules still apply.
+        - name: DISABLE_SCENARIOS
+          value: crowdsecurity/http-crawl-non_statics
       # NOTE: crowdsecurity/whitelists stays enabled on purpose. It whitelists
       # RFC1918, which is what stops a parsing mistake from banning the
       # cloudflared pod and taking every public service down with it.
