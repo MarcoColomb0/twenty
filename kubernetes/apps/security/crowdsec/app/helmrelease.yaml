@@ -16,6 +16,33 @@ spec:
     # Talos runs containerd, so pod logs are in CRI format
     container_runtime: containerd
 
+    config:
+      parsers:
+        s02-enrich:
+          # Every 403 the external gateway emits is the bouncer's own ext_authz
+          # denial -- checked against the access logs, not one came from an
+          # upstream app. Without this they are parsed as ordinary client
+          # requests, and since a banned client keeps browsing, its denials pile
+          # up as distinct 4xx paths and overflow http-probing (capacity 10).
+          # The ban then renews itself forever from evidence CrowdSec generated.
+          #
+          # Dropping them loses nothing: the decision that caused the denial was
+          # already made from real traffic. Counting the block as fresh proof of
+          # the behaviour it blocked is just double counting.
+          #
+          # The envoy parser unmarshals the whole JSON line, so the field is
+          # reachable here even though it is not mapped into evt.Parsed. The nil
+          # check short-circuits on lines that were not JSON, where the envoy key
+          # is absent and dereferencing it would throw.
+          twenty-ext-authz-whitelist.yaml: |
+            name: twenty/ext-authz-whitelist
+            description: "Do not feed bouncer denials back into the scenarios"
+            filter: "evt.Meta.log_type == 'http_access-log'"
+            whitelist:
+              reason: "blocked by the CrowdSec bouncer, not client behaviour"
+              expression:
+                - evt.Unmarshaled.envoy != nil && evt.Unmarshaled.envoy.response_code_details == "ext_authz_denied"
+
     agent:
       # Only the external gateway is worth watching: envoy-internal serves the
       # LAN, which is whitelisted anyway.
@@ -90,6 +117,22 @@ spec:
             - crowdsecurity/crs
           outofband_rules:
             - crowdsecurity/experimental-*
+          # CRS 920440 is "URL file extension is restricted by policy", and .sql
+          # is on that list for good reason -- a .sql over HTTP is normally a
+          # leaked dump. Actual Budget legitimately serves its schema migrations
+          # that way and fetches ~40 of them on every load, so 920440 matched,
+          # 949110 tripped on the accumulated anomaly score, and the WAF banned
+          # real users for opening the app.
+          #
+          # Scoped as tightly as the hook allows: in-band only, that one vhost,
+          # that one path prefix. Every other host keeps the extension policy,
+          # and the rest of CRS still applies to /data/migrations itself.
+          pre_eval:
+            - filter: >-
+                IsInBand == true && req.Host == "actual.${SECRET_DOMAIN}"
+                && req.URL.Path startsWith "/data/migrations/"
+              apply:
+                - RemoveInBandRuleByID(920440)
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
