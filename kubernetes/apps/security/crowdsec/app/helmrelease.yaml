@@ -117,22 +117,37 @@ spec:
             - crowdsecurity/crs
           outofband_rules:
             - crowdsecurity/experimental-*
-          # CRS 920440 is "URL file extension is restricted by policy", and .sql
-          # is on that list for good reason -- a .sql over HTTP is normally a
-          # leaked dump. Actual Budget legitimately serves its schema migrations
-          # that way and fetches ~40 of them on every load, so 920440 matched,
-          # 949110 tripped on the accumulated anomaly score, and the WAF banned
-          # real users for opening the app.
+          # CRS scores a CRITICAL rule at 5 and 949110 blocks at 5, so a single
+          # match bans outright -- every alert here read "anomaly: 5", never
+          # more. That makes the 920xxx allowlist rules unusable in-band: they
+          # encode an opinion about well-behaved HTTP written for classic
+          # server-rendered sites, and modern apps break them routinely. 920440
+          # banned users for Actual serving its own .sql migrations; 920420
+          # banned them for Socket.IO's polling content type. Patching one path
+          # at a time just waits for the next app to trip the next rule.
           #
-          # Scoped as tightly as the hook allows: in-band only, that one vhost,
-          # that one path prefix. Every other host keeps the extension policy,
-          # and the rest of CRS still applies to /data/migrations itself.
-          pre_eval:
-            - filter: >-
-                IsInBand == true && req.Host == "actual.${SECRET_DOMAIN}"
-                && req.URL.Path startsWith "/data/migrations/"
-              apply:
-                - RemoveInBandRuleByID(920440)
+          # Removed here are only the six driven by a configurable allowlist --
+          # "not allowed by policy" / "restricted by policy". Everything else in
+          # 920 is real protocol abuse detection (null bytes, encoding abuse,
+          # smuggling indicators, oversized arguments) and stays, as do 921
+          # (smuggling, response splitting), 930-932 (LFI/RFI/RCE), 941 (XSS),
+          # 942 (SQLi) and 944 (Java).
+          #
+          # Not done by tag: 920420 and 920440 carry 'attack-protocol', but so
+          # do 16 rules in REQUEST-921-PROTOCOL-ATTACK, which are genuine
+          # attacks. Tag removal would take those with them.
+          #
+          # 920500 "Attempt to access a backup or working file" is deliberately
+          # kept -- that, not the extension allowlist, is what catches someone
+          # hunting for database dumps.
+          on_load:
+            - apply:
+                - RemoveInBandRuleByID(920420) # content type not allowed by policy
+                - RemoveInBandRuleByID(920430) # HTTP version not allowed by policy
+                - RemoveInBandRuleByID(920440) # URL file extension restricted by policy
+                - RemoveInBandRuleByID(920450) # HTTP header restricted by policy
+                - RemoveInBandRuleByID(920451) # HTTP header restricted by policy
+                - RemoveInBandRuleByID(920480) # content type charset not allowed by policy
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
@@ -175,6 +190,22 @@ spec:
           value: twenty
         - name: ENROLL_TAGS
           value: k8s talos homelab
+        # The LAPI keeps its decisions in SQLite, and every two hours it inserts
+        # the community blocklist -- roughly 28k rows. Without WAL, those writes
+        # block readers for long enough that the whole API stops answering:
+        # "database is locked", machine logins failing, cscli timing out after
+        # 100s, and the bouncer reporting "API error: access forbidden" (which
+        # fails open, so nothing is enforced while it lasts). CrowdSec warns
+        # about exactly this at startup:
+        #   sqlite is not using WAL mode, LAPI might become unresponsive when
+        #   inserting the community blocklist
+        # The entrypoint turns this env var into db_config.use_wal, which avoids
+        # rewriting config.yaml.local. That file carries the chart's own
+        # registration-token placeholder, expanded from a Secret at runtime, and
+        # Flux postBuild would substitute it away and break agent
+        # auto-registration.
+        - name: USE_WAL
+          value: "true"
       resources:
         requests:
           cpu: 10m
