@@ -33,6 +33,19 @@ spec:
               # passkey behind Pocket ID should be the only key to it rather
               # than one option beside a shared password.
               ACTUAL_OPENID_ENFORCE: "true"
+              # Actual only auto-creates an account for the very first OIDC
+              # login. After that the default "manual" mode requires the
+              # identity to already exist in its users table, matched on exact
+              # user_name against preferred_username from the provider, and
+              # anyone else is refused with a bare "openid-grant-failed" -- long
+              # after the token exchange and userinfo call have both succeeded,
+              # so the provider logs look perfectly healthy.
+              #
+              # Pocket ID is the gate, and ACTUAL_OPENID_ENFORCE above means
+              # there is no password path in, so anyone who can present a
+              # passkey there should get an account here. New identities are
+              # created as BASIC, not ADMIN; the owner stays the owner.
+              ACTUAL_USER_CREATION_MODE: login
               ACTUAL_OPENID_CLIENT_ID:
                 valueFrom:
                   secretKeyRef:
