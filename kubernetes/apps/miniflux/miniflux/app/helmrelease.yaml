@@ -1,0 +1,116 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: miniflux
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: miniflux
+  interval: 1h
+  values:
+    controllers:
+      miniflux:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/miniflux/miniflux
+              tag: 2.3.3
+            env:
+              BASE_URL: https://miniflux.${SECRET_DOMAIN}
+              LISTEN_ADDR: 0.0.0.0:8080
+              # Miniflux applies its own schema on boot, so there is no separate
+              # migration job to sequence.
+              RUN_MIGRATIONS: "1"
+              # No local account is ever created. Pocket ID is the only way in,
+              # which means there is no password on this to phish or reuse --
+              # the same posture as Grafana and Actual.
+              CREATE_ADMIN: "0"
+              DISABLE_LOCAL_AUTH: "1"
+              OAUTH2_PROVIDER: oidc
+              OAUTH2_OIDC_PROVIDER_NAME: Pocket ID
+              # Issuer URL, not the .well-known path -- Miniflux appends that
+              # itself, and giving it the full path yields a 404 at discovery.
+              OAUTH2_OIDC_DISCOVERY_ENDPOINT: https://id.${SECRET_DOMAIN}
+              OAUTH2_REDIRECT_URL: https://miniflux.${SECRET_DOMAIN}/oauth2/oidc/callback
+              # Without this the first OIDC login has no account to attach to and
+              # fails, because CREATE_ADMIN above means none was seeded.
+              OAUTH2_USER_CREATION: "1"
+              DATABASE_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-miniflux-app
+                    key: uri
+              OAUTH2_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc miniflux-oidc
+                    key: client_id
+              OAUTH2_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthcheck
+                    port: &port 8080
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthcheck
+                    port: *port
+                  # First boot runs the schema migrations against an empty
+                  # database, which takes longer than a restart.
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 30
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        # Published, like the other Pocket ID-gated apps. All state lives in
+        # Postgres, so there is no volume here and nothing for VolSync to back
+        # up -- the CNPG base backups and WAL archive cover it entirely.
+        hostnames:
+          - "miniflux.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
