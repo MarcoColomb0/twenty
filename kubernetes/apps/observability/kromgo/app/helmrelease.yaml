@@ -79,7 +79,7 @@ spec:
           title: Memory
           query: round((1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100, 0.1)
           valueExpr: humanizeFloat(result) + "%"
-          colorExpr: 'colorScale(result, [50.0, 80.0], ["green", "orange", "red"])'
+          colorExpr: 'colorScale(result, [75.0, 90.0], ["green", "orange", "red"])'
           icon: mdi:memory
 
         - id: cluster_age
