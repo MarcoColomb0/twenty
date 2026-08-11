@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tuppr
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/system-upgrade/tuppr/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: system-upgrade
+  # tuppr-plans applies the CRs this chart's CRDs define, so this one has to
+  # actually be ready before that runs rather than merely applied.
+  wait: true

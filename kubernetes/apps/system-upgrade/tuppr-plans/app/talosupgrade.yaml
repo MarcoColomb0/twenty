@@ -1,0 +1,36 @@
+---
+apiVersion: tuppr.home-operations.com/v1alpha1
+kind: TalosUpgrade
+metadata:
+  name: cluster
+spec:
+  talos:
+    # Kept in step with talos/talenv.yaml by the same Renovate annotation, so a
+    # merged installer bump is what actually starts a rollout. Set to the running
+    # version on first deploy, which makes applying this a no-op.
+    #
+    # tuppr upgrades to exactly this version and does NOT enforce Talos's
+    # supported upgrade path -- stepping through minor releases is on us.
+    # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
+    version: v1.13.7
+  policy:
+    # Longhorn volumes are ReadWriteOnce. A fast reboot can orphan the mount and
+    # pin the volume to the old node, which surfaces later as a Multi-Attach
+    # error when the pod reschedules. This drains and waits for CSI volumes to
+    # detach first.
+    waitForVolumeDetach: true
+  healthChecks:
+    # Gate every node on the cluster being whole first. With three nodes the
+    # rollout can afford to stop and wait rather than push on.
+    - apiVersion: v1
+      kind: Node
+      expr: status.conditions.filter(c, c.type == "Ready").all(c, c.status == "True")
+      timeout: 10m
+    # And on Longhorn having finished rebuilding from the previous node's reboot.
+    # "unknown" is what a detached volume reports and is normal; "degraded" means
+    # a replica is still rebuilding, which is exactly when not to reboot the next
+    # node.
+    - apiVersion: longhorn.io/v1beta2
+      kind: Volume
+      expr: status.robustness in ["healthy", "unknown"]
+      timeout: 30m

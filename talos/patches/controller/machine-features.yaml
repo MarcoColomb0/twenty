@@ -1,0 +1,17 @@
+---
+machine:
+  features:
+    # tuppr drives upgrades over the Talos API rather than talosctl from a laptop,
+    # so the namespace it runs in needs os:admin. Talos mints a ServiceAccount
+    # token for the listed namespaces and the controller mounts it; without this
+    # every upgrade Job fails to authenticate at the first node.
+    #
+    # allowedKubernetesNamespaces must match the namespace tuppr is installed
+    # into exactly -- there is no wildcard, and a mismatch fails at run time
+    # rather than at apply time.
+    kubernetesTalosAPIAccess:
+      enabled: true
+      allowedRoles:
+        - os:admin
+      allowedKubernetesNamespaces:
+        - system-upgrade
