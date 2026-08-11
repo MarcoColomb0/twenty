@@ -17,6 +17,23 @@ spec:
       storageReservedPercentageForDefaultDisk: 10
       storageMinimalAvailablePercentage: 10
       upgradeChecker: false
+      # Longhorn puts a PodDisruptionBudget on each instance-manager with
+      # minAvailable 1 against a single pod, so allowed=0 and it can never be
+      # evicted. Under the default block-if-contains-last-replica that stops a
+      # node drain dead whenever the node holds the only replica of something --
+      # and every VolSync restic cache is single-replica by design, so whichever
+      # node happens to host one blocks its own drain. tuppr retries and rolls
+      # the cordon back every 12s, so an upgrade sits there looking busy forever.
+      #
+      # block-for-eviction-if-contains-last-replica evicts those replicas to
+      # another node first and then allows the drain, which is what makes
+      # unattended upgrades finish without a human deleting cache volumes.
+      nodeDrainPolicy: block-for-eviction-if-contains-last-replica
+      # Nothing was ever placed on twenty-lp01 after it joined: 20 replicas on
+      # asus01, 22 on hp01, 0 on lp01. least-effort only rebalances under
+      # pressure, so every volume kept both copies on the same two nodes and
+      # draining either one dropped the lot to a single replica.
+      replicaAutoBalance: best-effort
     persistence:
       defaultClass: true
       defaultClassReplicaCount: 2
