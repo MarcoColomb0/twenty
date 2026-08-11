@@ -23,14 +23,16 @@ cniConfig:
 # twenty-01 (.200) and twenty-virt01 (.201) were both VMs on one LattePanda N150,
 # so the pair only ever counted as a single failure domain -- losing the host took
 # two of four control plane nodes with it, which is what happened. Retired in
-# favour of physical boxes. This leaves two etcd members until a LattePanda
-# rejoins as a single node: quorum 2 of 2, so any node lost stops the API.
+# favour of physical boxes, and the LattePanda rebuilt bare metal as twenty-lp01
+# on the same .201 address. Three etcd members again: quorum 2 of 3, so one node
+# can be lost without stopping the API.
 nodes:
   - hostname: "twenty-hp01"
     ipAddress: "192.168.100.202"
     nodeLabels:
       # What Node Feature Discovery would set. The Intel GPU device plugin
-      # selects on it, and this is the only node with an iGPU.
+      # selects on it. Both Intel boxes carry it; twenty-asus01 is AMD and does
+      # not, so the plugin never lands there.
       intel.feature.node.kubernetes.io/gpu: "true"
     installDisk: "/dev/sda"
     machineSpec:
@@ -72,6 +74,11 @@ nodes:
 
   - hostname: "twenty-lp01"
     ipAddress: "192.168.100.201"
+    nodeLabels:
+      # What Node Feature Discovery would set. The Intel GPU device plugin
+      # selects on it. Both Intel boxes carry it; twenty-asus01 is AMD and does
+      # not, so the plugin never lands there.
+      intel.feature.node.kubernetes.io/gpu: "true"
     installDisk: "/dev/nvme0n1"
     machineSpec:
       secureboot: false
@@ -79,7 +86,7 @@ nodes:
     controlPlane: true
     networkInterfaces:
       - deviceSelector:
-          hardwareAddr: "04:42:1a:c9:3b:f4"
+          hardwareAddr: "00:e0:4c:70:68:83"
         dhcp: false
         addresses:
           - "192.168.100.201/24"
