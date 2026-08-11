@@ -28,7 +28,7 @@ _A home Kubernetes cluster on Talos Linux, managed entirely through Git._
 
 ## 🍼 Overview
 
-Two Talos nodes, both control plane, both schedulable. [Flux](https://fluxcd.io) reconciles
+Three Talos nodes, all control plane, all schedulable. [Flux](https://fluxcd.io) reconciles
 everything in this repository into the cluster — including DNS records, TLS certificates and OIDC
 clients. Nothing is applied by hand, and anything that cannot be committed in the clear is encrypted
 with SOPS and age.
@@ -48,30 +48,33 @@ The numbers above are queried from the cluster's own Prometheus and rendered by
 
 | Node | Address | Kind | Role |
 |---|---|---|---|
+| `twenty-lp01` | `192.168.100.201` | LattePanda N150, bare metal | Control plane + workloads |
 | `twenty-hp01` | `192.168.100.202` | HP mini PC, i5-8500T | Control plane + workloads |
 | `twenty-asus01` | `192.168.100.203` | ASUS PN50, Ryzen | Control plane + workloads |
 
 The API server sits behind a shared VIP at `192.168.100.100`.
 
-Every node is now its own physical box. The previous pair, `twenty-01` and `twenty-virt01`, were both
-VMs on a single LattePanda N150 — Longhorn spreads replicas across *nodes* and cannot know that, so
-"two healthy replicas" could still mean one machine. That stopped being theoretical when the host took
-two of four control plane nodes down at once, and the pair has been retired.
+Every node is its own physical box. It used to run four, but `twenty-01` and `twenty-virt01` were both
+VMs on a single LattePanda — Longhorn spreads replicas across *nodes* and cannot know that, so "two
+healthy replicas" could still mean one machine. That stopped being theoretical when the host took two
+of the four control plane nodes down at once. The pair was retired and the LattePanda rebuilt as a
+single bare-metal node, which is `twenty-lp01`.
 
-**This is a two-node cluster until a LattePanda rejoins as a single node.** Two etcd members means a
-quorum of two, so losing either box stops the API entirely rather than degrading it, and Longhorn's
-hard anti-affinity leaves no third node to rebuild a replica onto — every volume goes degraded for the
-duration of any reboot. Both resolve when the third node lands.
+Three etcd members means a quorum of two, so one node can be lost without stopping the API, and
+Longhorn always has a third node to rebuild a replica onto. Both of those were briefly untrue while
+the cluster sat at two nodes, and the two-of-two window is worth avoiding — losing either box took the
+API down outright rather than degrading it.
 
-`twenty-hp01` is the only node with an Intel iGPU, which is what Immich transcodes on; the AMD iGPU in
-`twenty-asus01` needs a different device plugin and is not yet exposed.
+`twenty-hp01` and `twenty-lp01` both have Intel iGPUs and carry the label the Intel GPU device plugin
+selects on; Immich transcodes on that. The AMD iGPU in `twenty-asus01` needs a different device plugin
+and is not yet exposed.
 
 ## 🖥️ Technology Stack
 
 |   | Name | Purpose |
 |---|---|---|
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/talos.svg"> | [Talos Linux](https://www.talos.dev) | Immutable, API-driven OS. No SSH, no shell, no package manager. |
-| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | [Kubernetes](https://kubernetes.io) | Two-node cluster today, etcd quorum of two; a third node is planned. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | [Kubernetes](https://kubernetes.io) | Three-node cluster, etcd quorum of two, so one node can be lost. |
 | <img width="28" src="https://github.com/cncf/artwork/raw/main/projects/flux/icon/color/flux-icon-color.svg"> | [Flux](https://fluxcd.io) | Reconciles this repository into the cluster. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/cilium.svg"> | [Cilium](https://cilium.io) | CNI in native routing mode, kube-proxy replacement, L2 announcements for load balancer IPs. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/coredns.svg"> | [CoreDNS](https://coredns.io) | Cluster DNS, with the cluster domain forwarded to k8s-gateway. |
@@ -93,7 +96,7 @@ duration of any reboot. Both resolve when the third node lands.
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/crowdsec.svg"> | [CrowdSec](https://crowdsec.net) | Reads the external gateway's logs and issues bans, enforced as an `ext_authz` check. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/pocket-id.svg"> | [Pocket ID](https://github.com/pocket-id/pocket-id) | OIDC provider. Passkeys only — there is no password to phish. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/reloader.svg"> | [Reloader](https://github.com/stakater/Reloader) | Restarts workloads when their ConfigMaps or Secrets change. |
-| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes-dashboard.svg"> | [Intel device plugins](https://github.com/intel/intel-device-plugins-for-kubernetes) | Advertises `twenty-hp01`'s iGPU as `gpu.intel.com/i915`. A `hostPath` mount is not enough: it shows the render node to the container but never grants the device cgroup entry. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes-dashboard.svg"> | [Intel device plugins](https://github.com/intel/intel-device-plugins-for-kubernetes) | Advertises the Intel iGPUs on `twenty-hp01` and `twenty-lp01` as `gpu.intel.com/i915`. A `hostPath` mount is not enough: it shows the render node to the container but never grants the device cgroup entry. |
 
 ## 📦 Applications
 
