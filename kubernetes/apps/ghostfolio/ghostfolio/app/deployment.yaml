@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: ghostfolio
-          image: docker.io/ghostfolio/ghostfolio:3.46.0
+          image: docker.io/ghostfolio/ghostfolio:3.48.1
           env:
             - name: NODE_ENV
               value: production
