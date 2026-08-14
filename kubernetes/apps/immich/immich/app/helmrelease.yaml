@@ -37,6 +37,10 @@ spec:
                     key: password
               REDIS_HOSTNAME: immich-dragonfly.immich.svc.cluster.local
               REDIS_PORT: "6379"
+              # Matches the service the machine-learning controller publishes
+              # below. Stated rather than left to the chart's default so the
+              # coupling is visible from the server's side too.
+              IMMICH_MACHINE_LEARNING_URL: http://immich-machine-learning:3003
             probes:
               liveness: &probes
                 enabled: true
@@ -77,6 +81,72 @@ spec:
               limits:
                 memory: 3Gi
                 gpu.intel.com/i915: 1
+      machine-learning:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        # Pinned to twenty-lp01 for its GPU, not for the node itself. Both Intel
+        # boxes can run OpenVINO, but the N150 is Xe-LP (Gen12) -- the "Iris Xe
+        # and Arc" family Immich names as the OpenVINO target -- while
+        # twenty-hp01's UHD 630 is Gen9.5 from 2017, which the docs specifically
+        # warn about ("more likely to experience issues, especially for older
+        # processors"). twenty-asus01 is not a candidate at all: its Vega 6
+        # (gfx90c, Renoir) is not an officially supported ROCm target, the ROCm
+        # image wants 35GiB of disk, and nothing advertises a GPU there.
+        #
+        # This also keeps the two GPU consumers apart. intel-device-plugins runs
+        # with sharedDevNum: 1, so one container per node holds the render node;
+        # pinning ML here leaves twenty-hp01's iGPU free for the server's
+        # transcoding, which is the only other thing that wants it.
+        pod:
+          nodeSelector:
+            kubernetes.io/hostname: twenty-lp01
+        containers:
+          app:
+            image:
+              repository: ghcr.io/immich-app/immich-machine-learning
+              tag: v3.1.0-openvino
+            env:
+              MACHINE_LEARNING_CACHE_FOLDER: /cache
+            probes:
+              liveness: &mlprobes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /ping
+                    port: &mlport 3003
+                  initialDelaySeconds: 0
+                  periodSeconds: 15
+                  timeoutSeconds: 10
+                  failureThreshold: 5
+              readiness: *mlprobes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /ping
+                    port: *mlport
+                  # Cold start compiles the model for the iGPU, which is slow the
+                  # first time and after any model change.
+                  initialDelaySeconds: 15
+                  periodSeconds: 10
+                  failureThreshold: 60
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 200m
+                memory: 2Gi
+                # The device plugin is what grants the device cgroup entry; a
+                # hostPath mount shows the render node without the permission.
+                gpu.intel.com/i915: 1
+              limits:
+                # OpenVINO uses noticeably more memory than CPU inference, and
+                # nllb-clip-large-siglip is one of the bigger models.
+                memory: 8Gi
+                gpu.intel.com/i915: 1
     defaultPodOptions:
       securityContext:
         runAsNonRoot: true
@@ -91,13 +161,38 @@ spec:
       # not mean recreating the volume.
       data:
         existingClaim: immich-data
-        globalMounts:
-          - path: /data
+        # Scoped to the server, not global. This claim is ReadWriteOnce and is
+        # attached to whichever node the server runs on; a globalMount would put
+        # it in the machine-learning pod too, which is pinned to a different
+        # node, and that pod could never start. ML never touches the library
+        # anyway -- the server posts images to it over HTTP.
+        advancedMounts:
+          immich:
+            app:
+              - path: /data
+      # Downloaded model weights. Two replicas rather than longhorn-single even
+      # though this is a rebuildable cache: a single-replica volume is exactly
+      # what blocked three node drains during the v1.13.8 rollout, because
+      # Longhorn cannot rebuild a detached one-replica volume elsewhere and
+      # refuses to let the node go. 5Gi replicated twice is cheaper than a
+      # wedged upgrade.
+      model-cache:
+        existingClaim: immich-model-cache
+        advancedMounts:
+          machine-learning:
+            app:
+              - path: /cache
     service:
       app:
+        controller: immich
         ports:
           http:
             port: *port
+      machine-learning:
+        controller: machine-learning
+        ports:
+          http:
+            port: *mlport
     route:
       app:
         # LAN only. Immich itself is never published; the only thing reachable
