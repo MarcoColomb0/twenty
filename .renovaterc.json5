@@ -1,11 +1,31 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["github>home-operations/renovate-presets#7.0.0"],
-  schedule: ["every weekend"],
+  // Routine updates land Saturday morning, so a broken chart has the weekend
+  // to be noticed rather than appearing mid-week.
+  schedule: ["after 6am and before 11am on saturday"],
   lockFileMaintenance: {
     enabled: true,
-    schedule: ["every weekend"],
+    schedule: ["after 6am and before 11am on saturday"],
   },
+  // Security fixes ignore the schedule entirely -- any day, any hour. The
+  // global schedule above is a convenience, and waiting up to six days for a
+  // known-vulnerable package is not a convenience worth having.
+  //
+  // Coverage caveat: this fires from GitHub's Dependabot alerts (and OSV
+  // below), which cover package ecosystems and GitHub Actions. Neither
+  // publishes advisories for container image tags or Helm charts, which is
+  // most of this repository -- so in practice this path catches Actions, not
+  // the apps. Container CVEs still arrive on the Saturday cadence.
+  vulnerabilityAlerts: {
+    enabled: true,
+    schedule: ["at any time"],
+    // No soak period on a security fix.
+    minimumReleaseAge: null,
+    addLabels: ["type/security"],
+  },
+  // Widens detection past GitHub's own alerts to the OSV database.
+  osvVulnerabilityAlerts: true,
   packageRules: [
     {
       description: "Flux Operator Group",
