@@ -107,6 +107,17 @@ spec:
               tag: v3.1.0-openvino
             env:
               MACHINE_LEARNING_CACHE_FOLDER: /cache
+              # The upstream image runs as root, where HOME=/ is writable. This
+              # pod runs as 1000 via defaultPodOptions, so huggingface_hub's
+              # default cache under $HOME/.cache/huggingface is not creatable and
+              # every model download dies with
+              #   RuntimeError: I/O error: Permission denied (os error 13)
+              # MACHINE_LEARNING_CACHE_FOLDER only says where Immich keeps the
+              # finished model; the downloader needs its own writable path.
+              HF_HOME: /cache
+              # Same root cause, quieter symptom: matplotlib falls back to a
+              # throwaway /tmp dir and warns on every start.
+              MPLCONFIGDIR: /cache/matplotlib
             probes:
               liveness: &mlprobes
                 enabled: true
