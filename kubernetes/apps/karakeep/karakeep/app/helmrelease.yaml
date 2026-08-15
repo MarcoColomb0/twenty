@@ -53,6 +53,32 @@ spec:
               # this, matching on a verified email from the provider is refused
               # and the login dead-ends.
               OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING: "true"
+              # Tagging runs on an Oracle Ampere A1 (2 vCPU, 12GB, no GPU) over
+              # Ollama's OpenAI-compatible API.
+              #
+              # OPENAI_BASE_URL rather than OLLAMA_BASE_URL on purpose: Ollama
+              # has no authentication of its own, and only this path makes
+              # Karakeep send "Authorization: Bearer <OPENAI_API_KEY>", which is
+              # what the Caddy in front of it checks. The Ollama-native setting
+              # would work functionally and leave the endpoint open.
+              OPENAI_BASE_URL: https://ai.${SECRET_DOMAIN}/v1
+              INFERENCE_TEXT_MODEL: qwen2.5:3b-instruct-q4_K_M
+              # 30s is the default and fails nearly every job on two ARM cores.
+              # The cost is prefill over the page content, not the ~20 tokens of
+              # tags generated.
+              INFERENCE_JOB_TIMEOUT_SEC: "300"
+              # Two cores cannot run two inferences; more workers only adds
+              # contention and timeouts.
+              INFERENCE_NUM_WORKERS: "1"
+              # Prefill is the expensive part, so context length is the main
+              # lever on how long a bookmark takes. 2048 is the default and is
+              # about right here.
+              INFERENCE_CONTEXT_LENGTH: "2048"
+              INFERENCE_LANG: italian
+              # Text tagging only. A vision model over CPU on this hardware
+              # would take minutes per screenshot.
+              INFERENCE_ENABLE_AUTO_TAGGING: "true"
+              INFERENCE_ENABLE_AUTO_SUMMARIZATION: "false"
               OAUTH_CLIENT_ID:
                 valueFrom:
                   secretKeyRef:
