@@ -1,0 +1,64 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: crowdsec-availability
+spec:
+  groups:
+    # The generic KubeDeploymentReplicasMismatch would have caught the AppSec
+    # outage, but only as a warning among many, and it waits 15 minutes. These
+    # are scoped to the components that fail OPEN: when they are down the
+    # external gateway keeps serving traffic with no inspection at all, which
+    # looks identical to everything being fine.
+    - name: crowdsec.availability
+      rules:
+        - alert: CrowdSecAppSecDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="security", deployment="crowdsec-appsec"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: CrowdSec AppSec has no running replica
+            description: >-
+              The WAF is not evaluating requests. envoy-proxy-bouncer fails open
+              on an unreachable AppSec, so everything published on the external
+              gateway is being served without inspection.
+
+        - alert: CrowdSecLAPIDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="security", deployment="crowdsec-lapi"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: CrowdSec LAPI has no running replica
+            description: >-
+              No decisions can be issued or served. The bouncer keeps its last
+              known set until its cache expires and then stops enforcing.
+
+        - alert: CrowdSecBouncerDown
+          expr: |
+            kube_deployment_status_replicas_available{namespace="security", deployment="envoy-proxy-bouncer"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: CrowdSec envoy bouncer has no running replica
+            description: >-
+              The ext_authz check is gone, so no ban is enforced on the external
+              gateway regardless of what CrowdSec has decided.
+
+        - alert: CrowdSecAgentMissing
+          expr: |
+            kube_daemonset_status_number_ready{namespace="security", daemonset="crowdsec-agent"}
+              < kube_daemonset_status_desired_number_scheduled{namespace="security", daemonset="crowdsec-agent"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: CrowdSec agent not running on every node
+            description: >-
+              Envoy access logs on the affected node are not being parsed, so
+              attacks reaching pods there generate no decisions. Detection
+              degrades quietly; nothing errors.

@@ -32,6 +32,15 @@ spec:
               # by hand.
               NTFY_AUTH_DEFAULT_ACCESS: deny-all
               NTFY_BEHIND_PROXY: "true"
+              # Alertmanager renders one ntfy message per alert group. The
+              # default 4K limit is smaller than a group of a dozen
+              # KubePodNotReady alerts, so ntfy answered
+              #   {"code":40041,"http":400,"error":"invalid request: message or
+              #    title is too large after replacing template"}
+              # and Alertmanager treats a 400 as unrecoverable -- it drops the
+              # notification rather than retrying. The entire alert pipeline was
+              # silently dead for as long as any group stayed large.
+              NTFY_MESSAGE_SIZE_LIMIT: 16K
               NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
             envFrom:
               - secretRef:

@@ -106,9 +106,14 @@ spec:
       config:
         route:
           receiver: ntfy
+          # namespace included so a noisy cluster-wide alert splits into one
+          # message per namespace instead of a single oversized one. Grouping
+          # only by alertname is what let a KubePodNotReady batch grow past
+          # ntfy's message limit and take the whole pipeline down with it.
           group_by:
             - alertname
             - job
+            - namespace
           group_wait: 30s
           group_interval: 5m
           repeat_interval: 12h

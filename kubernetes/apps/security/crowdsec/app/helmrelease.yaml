@@ -106,6 +106,13 @@ spec:
 
     appsec:
       enabled: true
+      # Two, because one meant the WAF had a single point of failure that failed
+      # OPEN. When the only pod died the envoy bouncer kept answering requests
+      # with
+      #   "msg":"waf error" ... "msg":"failed to evaluate request","action":"error"
+      # so every external request was waved through unexamined for 19 hours,
+      # with nothing in the UI to suggest the WAF was not running.
+      replicas: 2
       configs:
         twenty-appsec-full.yaml: |
           name: twenty/appsec-full
