@@ -13,6 +13,8 @@
     },
     "yaml.schemaStore.enable": true,
     "yaml.schemas": {
-        "kubernetes": "./kubernetes/**/*.yaml"
+        "kubernetes": "./kubernetes/**/*.yaml",
+        "https://k8s-schemas.home-operations.com/core/persistentvolumeclaim_v1.json": "**/pvc.yaml",
+        "https://k8s-schemas.home-operations.com/helm.toolkit.fluxcd.io/helmrelease_v2.json": "**/helmrelease.yaml"
     }
 }
