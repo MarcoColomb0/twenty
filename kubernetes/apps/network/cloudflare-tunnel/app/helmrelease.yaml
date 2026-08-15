@@ -11,6 +11,11 @@ spec:
   values:
     controllers:
       cloudflare-tunnel:
+        # cloudflared registers each replica as its own connection to the same
+        # tunnel and Cloudflare load-balances across them, so two is genuinely
+        # active/active rather than a warm spare. Every published service goes
+        # through here; one replica meant one pod eviction took the lot offline.
+        replicas: 2
         strategy: RollingUpdate
         annotations:
           reloader.stakater.com/auto: "true"
@@ -27,7 +32,9 @@ spec:
             envFrom:
               - secretRef:
                   name: cloudflare-tunnel-secret
-            args: ["tunnel", "run"]
+            args:
+              - "tunnel"
+              - "run"
             probes:
               liveness: &probes
                 enabled: true
@@ -44,13 +51,20 @@ spec:
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
+              capabilities: {drop: ["ALL"]}
             resources:
               requests:
                 cpu: 10m
               limits:
                 memory: 256Mi
     defaultPodOptions:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflare-tunnel
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534

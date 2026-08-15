@@ -9,6 +9,17 @@ spec:
     name: envoy-proxy-bouncer
   interval: 1h
   values:
+    # The ext_authz check itself. With one replica its loss meant no ban was
+    # enforced anywhere on the external gateway while requests kept succeeding --
+    # the same fail-open shape as the AppSec outage, and just as invisible.
+    replicaCount: 2
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: envoy-proxy-bouncer
     config:
       server:
         grpcPort: 8080
