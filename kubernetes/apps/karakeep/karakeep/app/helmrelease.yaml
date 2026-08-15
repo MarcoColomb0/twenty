@@ -26,7 +26,18 @@ spec:
             env:
               DATA_DIR: /data
               MEILI_ADDR: http://localhost:7700
-              BROWSER_WEB_URL: http://localhost:9222
+              # 127.0.0.1, not localhost. The karakeep-chrome image runs a CDP
+              # proxy on 9222 in front of Chrome's own 9223, and that proxy
+              # binds IPv4 only -- /proc/net/tcp6 in the container has no
+              # listeners at all. Karakeep resolves the hostname itself and
+              # picks the IPv6 answer, so it dialled [::1]:9222 and got
+              #   Failed to connect to the browser instance: connect ECONNREFUSED ::1:9222
+              # on a loop, leaving every crawl unprocessed.
+              #
+              # The previous image took --remote-debugging-address=0.0.0.0 and
+              # bound 9222 directly, which is why this only appeared after the
+              # image migration.
+              BROWSER_WEB_URL: http://127.0.0.1:9222
               NEXTAUTH_URL: https://karakeep.${SECRET_DOMAIN}
               DISABLE_NEW_RELEASE_CHECK: "true"
               # DISABLE_SIGNUPS gates OAuth account creation as well as the
