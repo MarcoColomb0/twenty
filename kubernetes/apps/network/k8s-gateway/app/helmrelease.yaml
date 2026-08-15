@@ -9,6 +9,18 @@ spec:
     name: k8s-gateway
   interval: 1h
   values:
+    # Split-horizon DNS for the whole LAN. blocky runs three replicas and then
+    # forwards the cluster domain here, so a single instance of this made the
+    # redundancy in front of it decorative -- and a DNS outage takes the house
+    # with it, not just the cluster.
+    replicaCount: 2
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: k8s-gateway
     fullnameOverride: k8s-gateway
     domain: "${SECRET_DOMAIN}"
     ttl: 1

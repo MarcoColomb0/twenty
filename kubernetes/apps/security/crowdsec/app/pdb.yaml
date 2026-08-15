@@ -1,0 +1,30 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crowdsec-appsec
+spec:
+  # Both of these fail OPEN: when they are gone the external gateway keeps
+  # serving traffic with no inspection and no ban enforcement, and nothing
+  # errors. A drain evicting the last replica is exactly how that happens
+  # without anyone choosing it.
+  #
+  # Selectors are the chart's own labels (k8s-app/type), not the
+  # app.kubernetes.io/* set -- a PodDisruptionBudget whose selector matches no
+  # pods is accepted without complaint and protects nothing.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      k8s-app: crowdsec
+      type: appsec
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crowdsec-lapi
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      k8s-app: crowdsec
+      type: lapi

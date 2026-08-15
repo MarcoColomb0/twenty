@@ -6,3 +6,4 @@ resources:
   - ./prometheusrule.yaml
   - ./helmrepository.yaml
   - ./secret.sops.yaml
+  - ./pdb.yaml

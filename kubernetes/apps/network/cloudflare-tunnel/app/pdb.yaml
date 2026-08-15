@@ -1,0 +1,14 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloudflare-tunnel
+spec:
+  # Every published service reaches the cluster through this. Without a budget a
+  # node drain during a tuppr upgrade can evict both replicas at once -- the
+  # scheduler is free to, since nothing says otherwise -- and external access
+  # disappears mid-upgrade for no reason anyone would connect to the upgrade.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflare-tunnel

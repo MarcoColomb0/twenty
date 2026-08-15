@@ -1,0 +1,13 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: k8s-gateway
+spec:
+  # Losing this is a LAN-wide DNS outage, not a cluster one -- blocky forwards
+  # the cluster domain here, so every device in the house depends on it
+  # resolving. A drain must never take the last replica.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: k8s-gateway
