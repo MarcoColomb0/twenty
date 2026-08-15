@@ -22,4 +22,13 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 7Gi
+      # Sized for the models actually in use, not the weights alone.
+      # nllb-clip-large-siglip__v1 is 5.7G by itself; facial recognition adds
+      # ~300M and OCR ~271M. At 7Gi that left no room for OpenVINO's compiled
+      # GPU blobs, and every model load failed with
+      #   [GPU] Failed to write 51380224 bytes to stream! Wrote 38189545
+      # which reads like a GPU fault and is really ENOSPC.
+      #
+      # Headroom matters beyond steady state: switching a model downloads the
+      # new one before the old is removed, so the volume has to hold both.
+      storage: 20Gi
