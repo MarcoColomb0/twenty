@@ -1,0 +1,105 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: rtabby
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: rtabby
+  interval: 1h
+  values:
+    controllers:
+      rtabby:
+        # SQLite on a single ReadWriteOnce volume, so two pods cannot run at
+        # once.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              # The -minimal variant is built without the third-party login
+              # feature, which is the point: login/{provider}/callback mints a
+              # fresh token for *any* identity that completes the OAuth flow,
+              # with no allowlist. This instance is on the public gateway, so
+              # the only way in is a bearer token from the Secret below.
+              #
+              # 0.4.5 was tagged upstream as "v.0.4.5" and no image was
+              # published for it; 0.4.4 is the newest real tag.
+              repository: ghcr.io/clem-fern/rtabby-web-api
+              tag: sha256-305e1b62aae7920cfca33a8f385ec15173207e7651edac3ae35c2adbe028e50a.sig
+            env:
+              DATABASE_URL: sqlite:///config/db.sqlite
+              # The image's WORKDIR is /config, where the default relative
+              # CONFIG_FILE would land -- but /config is the data volume, so
+              # the user list is kept on its own mount instead of dropping a
+              # Secret into the middle of the SQLite directory.
+              CONFIG_FILE: /etc/rtabby/users.yml
+              BIND_ADDR: 0.0.0.0
+              BIND_PORT: &port 8080
+              # Deletes stored configurations whose owning token is no longer
+              # in users.yml. A typo in the Secret would take the synced
+              # configs with it.
+              CLEANUP_USERS: "false"
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: *port
+                  initialDelaySeconds: 10
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: rtabby-data
+        globalMounts:
+          - path: /config
+      # If users.yml is missing, rtabby writes the bundled example file in its
+      # place and then exits non-zero -- so an unmounted Secret is a crash
+      # loop, not an empty instance.
+      config:
+        type: secret
+        name: rtabby-users
+        globalMounts:
+          - path: /etc/rtabby
+            readOnly: true
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "tabby.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
