@@ -1,0 +1,16 @@
+---
+# Postgres holds the vault itself. This volume holds what CNPG does not:
+# rsa_key.pem -- the JWT signing key -- plus attachments, Sends and the icon
+# cache. Losing rsa_key.pem invalidates every existing session and 2FA
+# remember-me token, so it is backed up like data rather than treated as cache.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi

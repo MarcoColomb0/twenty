@@ -1,0 +1,28 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: vaultwarden
+spec:
+  dependsOn:
+    # DATABASE_URL comes from the CNPG-generated postgres-vaultwarden-app Secret
+    - name: vaultwarden-db
+      namespace: vaultwarden
+  interval: 1h
+  path: ./kubernetes/apps/vaultwarden/vaultwarden/app
+  postBuild:
+    substitute:
+      APP: vaultwarden
+      VOLSYNC_CLAIM: vaultwarden-data
+      VOLSYNC_SCHEDULE: "0 6 * * *"
+      VOLSYNC_CACHE_CAPACITY: 1Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: vaultwarden
+  wait: false
