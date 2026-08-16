@@ -28,7 +28,7 @@ spec:
               # 0.4.5 was tagged upstream as "v.0.4.5" and no image was
               # published for it; 0.4.4 is the newest real tag.
               repository: ghcr.io/clem-fern/rtabby-web-api
-              tag: sha256-305e1b62aae7920cfca33a8f385ec15173207e7651edac3ae35c2adbe028e50a.sig
+              tag: 0.4.4-sqlite-minimal
             env:
               DATABASE_URL: sqlite:///config/db.sqlite
               # The image's WORKDIR is /config, where the default relative
