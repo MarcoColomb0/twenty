@@ -50,6 +50,15 @@ spec:
         - namespace: network
           podName: envoy-external-*
           program: envoy
+        # Vaultwarden's own logs, not the gateway's. A failed vault login is a
+        # 400 to Envoy, which no HTTP scenario treats as an auth failure, so
+        # bruteforce against it is invisible from the access log alone.
+        # Dominic-Wagner/vaultwarden-logs filters on
+        # Upper(evt.Parsed.program) == 'VAULTWARDEN', which is what program
+        # below sets.
+        - namespace: vaultwarden
+          podName: vaultwarden-*
+          program: vaultwarden
       env:
         # actual-budget-whitelist is a parser, not a collection -- it has no
         # collection wrapper on the hub, so it cannot go in COLLECTIONS below.
@@ -69,6 +78,7 @@ spec:
             yanis-kouidri/envoy
             crowdsecurity/http-dos
             crowdsecurity/discord-crawler-whitelist
+            Dominic-Wagner/vaultwarden
         # http-crawl-non_statics bans on 40 distinct non-static filenames per
         # source IP and hostname, leaking one per 0.5s. That fits a content site
         # being scraped; it does not fit a single-page app, which fires dozens of
