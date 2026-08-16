@@ -35,6 +35,10 @@ nodes:
       # not, so the plugin never lands there.
       intel.feature.node.kubernetes.io/gpu: "true"
     installDisk: "/dev/sda"
+    patches:
+      # Per-node, not global: the entries name one sysfs path per CPU, and the
+      # three nodes differ in core count and in whether the path exists at all.
+      - "@./patches/twenty-hp01/machine-cpu-power.yaml"
     machineSpec:
       secureboot: false
     talosImageURL: factory.talos.dev/installer/2494e85a994d8ac77dd6ca30df4a26912a78c8a538b314d42f6aba0eb9187c07
@@ -80,6 +84,8 @@ nodes:
       # not, so the plugin never lands there.
       intel.feature.node.kubernetes.io/gpu: "true"
     installDisk: "/dev/nvme0n1"
+    patches:
+      - "@./patches/twenty-lp01/machine-cpu-power.yaml"
     machineSpec:
       secureboot: false
     talosImageURL: factory.talos.dev/installer/2494e85a994d8ac77dd6ca30df4a26912a78c8a538b314d42f6aba0eb9187c07
