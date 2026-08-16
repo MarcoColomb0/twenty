@@ -1,0 +1,174 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vaultwarden
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: vaultwarden
+  interval: 1h
+  values:
+    controllers:
+      vaultwarden:
+        # /data is a single ReadWriteOnce volume, so two pods cannot run at once.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/dani-garcia/vaultwarden
+              tag: 1.37.1
+            env:
+              # The OIDC callback URL is derived from this and cannot be set
+              # separately, so it has to match the route below exactly.
+              DOMAIN: https://vault.${SECRET_DOMAIN}
+              DATA_FOLDER: /data
+              # Default is 80, which a non-root process cannot bind.
+              ROCKET_PORT: &port 8080
+              DATABASE_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-vaultwarden-app
+                    key: uri
+
+              # -- Who can get an account -------------------------------------
+              #
+              # SIGNUPS_ALLOWED covers the email+password signup form only, and
+              # with it false that path can create nothing. The SSO path does
+              # not consult it at all: sso_login() creates the user after
+              # checking SIGNUPS_DOMAINS_WHITELIST and the provider's
+              # email_verified claim, and nothing else.
+              #
+              # SIGNUPS_DOMAINS_WHITELIST is deliberately unset -- empty means
+              # every domain passes -- because membership of the
+              # vaultwarden-users group in Pocket ID is the access list, and it
+              # is the stricter of the two: an address in the right domain but
+              # outside the group never gets an authorization code to begin
+              # with. Restricting the domain here as well would only reject
+              # people the group already lets in, the moment someone's identity
+              # carries a different address than expected.
+              SIGNUPS_ALLOWED: "false"
+              INVITATIONS_ALLOWED: "false"
+
+              # -- SSO --------------------------------------------------------
+              #
+              # Pocket ID replaces the login step only. The vault key is still
+              # derived from the master password client-side, which Vaultwarden
+              # never sees and SSO never controls, and TOTP/WebAuthn is enforced
+              # on the SSO path too (identity.rs calls twofactor_auth() for any
+              # existing user). Three factors, one of which the server cannot
+              # leak.
+              SSO_ENABLED: "true"
+              # Password login stays as the break-glass path: with SSO_ONLY the
+              # credentials needed to fix a broken Pocket ID could be locked
+              # inside this vault. Both paths still require the master password
+              # and the second factor.
+              SSO_ONLY: "false"
+              # Issuer URL, not the .well-known path, and it must equal the
+              # "issuer" field the discovery document returns.
+              SSO_AUTHORITY: https://id.${SECRET_DOMAIN}
+              # Default false. Leave it: setting it together with
+              # SSO_SIGNUPS_MATCH_EMAIL lets an SSO identity attach itself to an
+              # existing account whose address it does not control.
+              SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION: "false"
+              # enforceOnLogin is not supported by Vaultwarden, so this shapes
+              # the password at creation only.
+              SSO_MASTER_PASSWORD_POLICY: '{"minComplexity":3,"minLength":14,"requireLower":true,"requireUpper":true,"requireNumbers":true,"requireSpecial":true}'
+              SSO_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc vaultwarden-oidc
+                    key: client_id
+              SSO_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+
+              # -- Client IP for CrowdSec -------------------------------------
+              #
+              # Not X-Forwarded-For: Vaultwarden takes the leftmost entry, and
+              # the leftmost entry is whatever the client sent. Verified against
+              # the echo app -- a request carrying "X-Forwarded-For: 203.0.113.9"
+              # arrives upstream as "203.0.113.9,<real client>". Banning on that
+              # would let an attacker both evade the ban and have any address
+              # they name banned across every published app.
+              #
+              # Public traffic reaches Envoy through the Cloudflare tunnel, and
+              # the edge sets CF-Connecting-IP itself, overwriting any client
+              # value. LAN traffic arrives via split DNS without the header, so
+              # ClientIp falls back to the Envoy pod address -- RFC1918, which
+              # crowdsecurity/whitelists drops anyway.
+              IP_HEADER: CF-Connecting-IP
+              IP_HEADER_TRUSTED_PROXIES: 10.42.0.0/16
+
+              # -- Logging ----------------------------------------------------
+              #
+              # Dominic-Wagner/vaultwarden-logs parses with
+              # StrTimeFormat "2006-01-02 15:04:05.000-0700". Vaultwarden's
+              # default stamp carries no UTC offset, so without %z every event
+              # is dropped at parse time and the bruteforce scenario silently
+              # never fires.
+              LOG_LEVEL: info
+              EXTENDED_LOGGING: "true"
+              LOG_TIMESTAMP_FORMAT: "%Y-%m-%d %H:%M:%S.%3f%z"
+              TZ: UTC
+
+              # ADMIN_TOKEN is deliberately absent: without it /admin is not
+              # served at all, which is one less credential on a public host.
+              # Set it (as an Argon2 PHC hash, never plaintext) only for as long
+              # as an admin task actually needs it.
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /alive
+                    port: *port
+                  initialDelaySeconds: 10
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 25m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: vaultwarden-data
+        globalMounts:
+          - path: /data
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "vault.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
