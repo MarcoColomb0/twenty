@@ -10,3 +10,4 @@ resources:
   - ./ocirepository.yaml
   - ./oidcclient.yaml
   - ./pvc.yaml
+  - ./secret.sops.yaml

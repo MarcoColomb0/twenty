@@ -116,10 +116,31 @@ spec:
               LOG_TIMESTAMP_FORMAT: "%Y-%m-%d %H:%M:%S.%3f%z"
               TZ: UTC
 
+              # -- Mail -------------------------------------------------------
+              #
+              # Mail being configured at all is what enables email 2FA and the
+              # new-device login notice; the notice is sent on every login from
+              # an unrecognised device, so a login nobody made is visible even
+              # though Pocket ID is the front door.
+              #
+              # REQUIRE_DEVICE_EMAIL is left at its default of false. It does
+              # not add the email -- that is already sent -- it only decides
+              # whether a *failed send* blocks the login. True would mean a dead
+              # relay locks every new device out of the vault, which is the same
+              # trade already refused with SSO_ONLY.
+              SMTP_FROM_NAME: Vaultwarden
+
               # ADMIN_TOKEN is deliberately absent: without it /admin is not
               # served at all, which is one less credential on a public host.
               # Set it (as an Argon2 PHC hash, never plaintext) only for as long
               # as an admin task actually needs it.
+            # Host, port, security, from address, username and password. All six
+            # live in the SOPS secret, not only the password: the host and
+            # username identify the relay account, and this repository is
+            # public.
+            envFrom:
+              - secretRef:
+                  name: vaultwarden-smtp
             probes:
               liveness: &probes
                 enabled: true
