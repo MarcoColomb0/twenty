@@ -7,6 +7,8 @@ creation_rules:
     encrypted_regex: "^(data|stringData)$"
     mac_only_encrypted: true
     age: "age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex"
+  - path_regex: docker/.*\.env$
+    age: "age1kpm30zeekd5mtye0r9vweshcwd7jl4kqn93923pncxe50xcttg5q50xldw"
 stores:
   yaml:
     indent: 2

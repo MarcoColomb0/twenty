@@ -1,0 +1,17 @@
+---
+# doco-cd deployment config. This repository is Flux's, and Flux ignores this
+# file entirely -- it only reconciles ./kubernetes. doco-cd runs on the Oracle
+# ARM box and only deploys what is declared here, so the two never overlap.
+#
+# Multiple stacks would be additional YAML documents separated by ---.
+name: oracle-ai
+reference: refs/heads/main
+working_dir: docker/oracle-ai
+compose_files:
+  - compose.yaml
+# The image tags in compose.yaml are pinned, so a pull only matters when one of
+# them actually changes.
+force_image_pull: true
+# Ollama pulls a ~2GB model on first start and the box has two cores; the
+# 180s default is not enough for the initial converge.
+timeout: 600
