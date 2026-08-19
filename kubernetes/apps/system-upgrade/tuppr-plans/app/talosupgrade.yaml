@@ -12,7 +12,7 @@ spec:
     # tuppr upgrades to exactly this version and does NOT enforce Talos's
     # supported upgrade path -- stepping through minor releases is on us.
     # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
-    version: v1.13.9
+    version: v1.13.8
   policy:
     # Longhorn volumes are ReadWriteOnce. A fast reboot can orphan the mount and
     # pin the volume to the old node, which surfaces later as a Multi-Attach
