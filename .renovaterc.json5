@@ -65,6 +65,20 @@
       addLabels: ["renovate/container"],
     },
     {
+      // Compose stacks under ./docker are deployed by doco-cd to the Oracle
+      // host, not by Flux to the cluster. Renovate already finds them -- the
+      // docker-compose manager's default pattern matches compose.yaml at any
+      // depth -- so this only labels them, because merging one of these PRs
+      // changes a different machine than every other container PR here.
+      description: "doco-cd managed compose stacks",
+      matchManagers: ["docker-compose"],
+      addLabels: ["renovate/docker-compose"],
+      // doco-cd polls every 5 minutes and redeploys on merge, unattended and
+      // with nothing watching the result. A short soak means a tag that gets
+      // pulled immediately after release has been out a few days first.
+      minimumReleaseAge: "3 days",
+    },
+    {
       matchDatasources: ["helm"],
       addLabels: ["renovate/helm"],
     },

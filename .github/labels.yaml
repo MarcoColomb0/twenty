@@ -20,6 +20,8 @@
   color: "0e8a16"
 - name: area/justfile
   color: "0e8a16"
+- name: area/docker
+  color: "0e8a16"
 # Renovate Types
 - name: renovate/container
   color: "027fa0"
@@ -30,6 +32,8 @@
 - name: renovate/github-release
   color: "027fa0"
 - name: renovate/helm
+  color: "027fa0"
+- name: renovate/docker-compose
   color: "027fa0"
 # Semantic Types
 - name: type/digest

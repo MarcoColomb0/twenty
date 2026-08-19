@@ -7,6 +7,11 @@ area/docs:
   - changed-files:
       - any-glob-to-any-file:
           - README.md
+area/docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docker/**/*
+          - .doco-cd.yaml
 area/github:
   - changed-files:
       - any-glob-to-any-file:
