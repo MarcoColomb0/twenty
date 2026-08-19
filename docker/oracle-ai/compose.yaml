@@ -1,11 +1,4 @@
 ---
-# Ollama AI endpoint for Karakeep tagging.
-# Ampere A1, 2 vCPU / 12GB, no GPU -- CPU inference only.
-#
-# Caddy terminates TLS on :443 with a Let's Encrypt certificate obtained over
-# ACME DNS-01, and is the only thing published. Ollama has no authentication of
-# its own and is not reachable from outside the compose network -- deliberately
-# no ports: on it.
 services:
   ollama:
     image: ollama/ollama:0.32.14
