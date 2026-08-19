@@ -1,0 +1,57 @@
+# Ollama speaks OpenAI-compatible on /v1, which is the path Karakeep uses when
+# OPENAI_BASE_URL is set. That path is chosen over OLLAMA_BASE_URL deliberately:
+# it makes Karakeep send "Authorization: Bearer <OPENAI_API_KEY>", and that
+# header is the only thing here capable of authenticating a caller. Ollama
+# itself has none.
+{
+	email {$ACME_EMAIL}
+	admin off
+
+	# Every request arrives through Cloudflare, so without this the logs record
+	# the edge IP for everything. The image bundles caddy-cloudflare-ip, which
+	# keeps the range list current instead of hardcoding it. This is a global
+	# option under servers -- it is not valid inside a site block.
+	servers {
+		trusted_proxies cloudflare {
+			interval 12h
+			timeout 15s
+		}
+	}
+}
+
+https://{$AI_HOSTNAME} {
+	# DNS-01, not HTTP-01. Let's Encrypt never connects to this host to
+	# validate -- it reads a TXT record Caddy publishes through Cloudflare's
+	# API -- so issuance and renewal work fine behind a firewall that only
+	# admits Cloudflare, and no port needs opening for ACME.
+	tls {
+		dns cloudflare {$CF_API_TOKEN}
+		# The record has to be visible to Let's Encrypt's resolvers, not to
+		# whatever this box happens to use. Asking authoritative servers
+		# directly avoids waiting on a stale cache during issuance.
+		resolvers 1.1.1.1 8.8.8.8
+	}
+
+	@authorized header Authorization "Bearer {$AI_TOKEN}"
+
+	handle @authorized {
+		reverse_proxy ollama:11434 {
+			# CPU inference on two cores is slow. Caddy's defaults would cut a
+			# generation off long before it finishes.
+			transport http {
+				response_header_timeout 5m
+				read_timeout 5m
+			}
+		}
+	}
+
+	# Wrong token or none: nothing, and no hint that an Ollama is behind this.
+	handle {
+		respond "unauthorized" 401
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

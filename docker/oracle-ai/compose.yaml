@@ -1,0 +1,65 @@
+---
+# Ollama AI endpoint for Karakeep tagging.
+# Ampere A1, 2 vCPU / 12GB, no GPU -- CPU inference only.
+#
+# Caddy terminates TLS on :443 with a Let's Encrypt certificate obtained over
+# ACME DNS-01, and is the only thing published. Ollama has no authentication of
+# its own and is not reachable from outside the compose network -- deliberately
+# no ports: on it.
+services:
+  ollama:
+    image: ollama/ollama:0.32.14
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    environment:
+      # Keep the model resident. Without this it unloads between bookmarks and
+      # every job pays a cold reload from disk, which on this hardware costs
+      # more than the inference itself.
+      OLLAMA_KEEP_ALIVE: 24h
+      # Two cores. More parallelism here makes it slower, not faster, and the
+      # Cloudflare proxy will cut the request off long before a queue drains.
+      # Pinned like everything else here: doco-cd redeploys on every commit, so
+      # a floating tag would mean the running version changes on an unrelated
+      # push with nothing recording what moved.
+      OLLAMA_NUM_PARALLEL: 1
+      OLLAMA_MAX_LOADED_MODELS: 1
+    expose:
+      - "11434"
+
+  caddy:
+    # Prebuilt Caddy with the Cloudflare DNS provider compiled in -- the stock
+    # caddy image ships no DNS modules, so ACME DNS-01 is impossible with it.
+    # Pinned rather than :latest; nothing on this host watches for updates the
+    # way Renovate does for the cluster.
+    image: ghcr.io/serfriz/caddy-cloudflare:2.11.4
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      # 443 only. DNS-01 proves control of the name through Cloudflare's API, so
+      # no inbound port is needed for issuance or renewal -- which is what makes
+      # this work behind a firewall that admits only Cloudflare.
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys live here. Losing it means
+      # re-issuing, and Let's Encrypt rate-limits that, so keep the volume.
+      - caddy_data:/data
+      - caddy_config:/config
+    # Values come from the SOPS-encrypted .env beside this file. doco-cd
+    # detects and decrypts it at deploy time -- detection is content-based
+    # (the file contains both "sops" and "ENC["), so no naming convention is
+    # needed beyond the .env extension.
+    environment:
+      AI_TOKEN: ${AI_TOKEN:?set AI_TOKEN in .env}
+      AI_HOSTNAME: ${AI_HOSTNAME:?set AI_HOSTNAME in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      # Scoped token, Zone:DNS:Edit on this zone only. Do not reuse the
+      # cluster's cert-manager token: this host is a different blast radius.
+      CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in .env}
+
+volumes:
+  ollama:
+  caddy_data:
+  caddy_config:

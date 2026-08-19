@@ -1,0 +1,28 @@
+---
+# doco-cd itself. This one is NOT managed by doco-cd -- it is the bootstrap,
+# brought up by hand once on the Oracle box. Everything else in ./docker is
+# then deployed from git.
+services:
+  doco-cd:
+    image: ghcr.io/kimdre/doco-cd:0.109.2
+    restart: unless-stopped
+    volumes:
+      # Needed to drive compose on the host.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - doco_data:/data
+      # The age private key that decrypts docker/oracle-ai/.env. Keep this
+      # OUTSIDE the repo and root-owned.
+      - /etc/doco-cd/age.key:/run/secrets/sops_age_key:ro
+    environment:
+      SOPS_AGE_KEY_FILE: /run/secrets/sops_age_key
+      # Polling, not webhooks. The OCI security list only admits Cloudflare, so
+      # GitHub could never reach this host to deliver one -- and polling needs
+      # no inbound access at all.
+      POLL_CONFIG: |
+        - url: https://github.com/MarcoColomb0/twenty.git
+          reference: refs/heads/main
+          interval: 5m
+      # No ports. Nothing about this needs to be reachable.
+
+volumes:
+  doco_data:
