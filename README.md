@@ -33,6 +33,10 @@ everything in this repository into the cluster — including DNS records, TLS ce
 clients. Nothing is applied by hand, and anything that cannot be committed in the clear is encrypted
 with SOPS and age.
 
+One thing lives outside the cluster: a small Oracle ARM box runs an Ollama endpoint for Karakeep's
+tagging. It is declared here too, under `docker/`, and deployed by doco-cd from the same commits —
+Flux reconciles `kubernetes/`, doco-cd reconciles `docker/`, and neither looks at the other's path.
+
 The numbers above are queried from the cluster's own Prometheus and rendered by
 [Kromgo](https://github.com/home-operations/kromgo). They are real, and they update on their own.
 
@@ -88,6 +92,8 @@ and is not yet exposed.
 | <img width="28" src="https://avatars.githubusercontent.com/u/80352373"> | [Dragonfly](https://www.dragonflydb.io) | Redis-compatible in-memory store. |
 | <img width="28" src="https://raw.githubusercontent.com/backube/volsync/main/docs/media/volsync.svg"> | [VolSync](https://volsync.readthedocs.io) | Backs volumes up with restic, encrypted before anything leaves the cluster. |
 | <img width="28" src="https://avatars.githubusercontent.com/u/99631794"> | [Spegel](https://spegel.dev) | Peer-to-peer image mirror. Nodes pull layers from each other over the LAN, so only the first pull of an image leaves the network. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/talos.svg"> | [tuppr](https://github.com/home-operations/tuppr) | Talos and Kubernetes upgrades, driven by the API rather than `talosctl` from a laptop. A merged Renovate PR is what starts a rollout — drained, rebooted and health-gated one node at a time. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/docker.svg"> | [doco-cd](https://doco.cd) | The same GitOps loop for hosts outside the cluster. Polls this repository and deploys the Compose stacks under `docker/` to an Oracle ARM box. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/prometheus.svg"> | [Prometheus](https://prometheus.io) | Metrics, 5-day retention on Longhorn. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/grafana.svg"> | [Grafana](https://grafana.com) | Dashboards. No login form at all — Pocket ID only. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/alertmanager.svg"> | [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) | Routes alerts to ntfy. |
@@ -102,12 +108,15 @@ and is not yet exposed.
 
 |   | Name | Notes |
 |---|---|---|
-| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [Immich](https://immich.app) | Photos and video. Internal gateway only, Pocket ID with no password login at all, transcodes on the iGPU. Settings live in its database rather than a mounted file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [Immich](https://immich.app) | Photos and video. Internal gateway only, Pocket ID with no password login at all. Transcodes on one Intel iGPU and runs machine learning on the other over OpenVINO — the device plugin hands out one GPU per node, so the two consumers have to sit on different machines. Settings live in its database rather than a mounted file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/affine.svg"> | [AFFiNE](https://affine.pro) | Notes and whiteboards. Its schema migration runs as an init container, which is how upstream orders it too. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/karakeep.svg"> | [Karakeep](https://karakeep.app) | Bookmarks and read-later. Crawler and search index run as sidecars reached over localhost, so neither is on the cluster network. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/actual-budget.svg"> | [Actual Budget](https://actualbudget.org) | Budgeting, SQLite-backed. Pocket ID is enforced — there is no server password to fall back to. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/ghostfolio.svg"> | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/miniflux.svg"> | [Miniflux](https://miniflux.app) | RSS reader. Keeps everything in Postgres, so there is no volume here at all — the CNPG base backups and WAL archive cover it entirely. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/vaultwarden.svg"> | [Vaultwarden](https://github.com/dani-garcia/vaultwarden) | Password vault. Its own logs are watched by CrowdSec: a failed vault login is a 200 to Envoy, so bruteforce against it is invisible from the access log alone. |
+| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | [rtabby](https://github.com/clem-fern/rtabby-web-api) | Tabby terminal config sync. Runs the `-minimal` image deliberately: the full build's `login/{provider}/callback` mints a token for any identity that completes the OAuth flow, with no allowlist. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/it-tools.svg"> | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
@@ -360,10 +369,15 @@ external-dns does the same for public names in Cloudflare.
 bootstrap/     Helmfile + scripts to get from bare Talos to a Flux-managed cluster
 kubernetes/
   apps/        One directory per namespace, one Flux Kustomization per app
-  components/  Reusable Kustomize components (SOPS cluster secrets)
+  components/  Reusable Kustomize components (SOPS cluster secrets, VolSync, CNPG backups)
   flux/        The root Kustomization that adopts everything under apps/
 talos/         talconfig.yaml and machine patches, rendered by talhelper
+docker/        Compose stacks for hosts outside the cluster, deployed by doco-cd
 ```
+
+Flux's root Kustomization points at `./kubernetes/apps`, and doco-cd reads `.doco-cd.yaml` at the
+repository root, which points at `docker/`. The two tools share the repository and ignore each
+other's paths entirely.
 
 Each app follows the same shape: a `ks.yaml` declaring the Flux `Kustomization`, and an `app/`
 directory holding the `HelmRelease` or plain manifests plus its chart source.
@@ -378,7 +392,7 @@ kubernetes/apps/<namespace>/<app>/
 ```
 
 Namespaces map to directories under `kubernetes/apps/`:
-`actual`, `affine`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `network`, `observability`, `security`, `storage`.
+`actual`, `affine`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `miniflux`, `network`, `observability`, `security`, `storage`, `system-upgrade`, `tabby`, `vaultwarden`.
 
 An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
 publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting
@@ -400,14 +414,17 @@ just kube reconcile
 just talos generate-config
 just talos apply-node 192.168.100.202
 
-# Upgrade a node, then the cluster
-just talos upgrade-node 192.168.100.202
-just talos upgrade-k8s
 ```
 
-Dependencies are kept current by [Renovate](https://www.mend.io/renovate), and every pull request runs
-[flux-local](https://github.com/allenporter/flux-local) to diff the rendered manifests before anything
-reaches the cluster.
+Upgrades are not run from here. `tuppr` watches a `TalosUpgrade` and a `KubernetesUpgrade` in the
+`system-upgrade` namespace, both carrying the same Renovate annotations as `talos/talenv.yaml` — so
+merging the Renovate PR is what starts a rollout, one node at a time, drained and health-gated. The
+`just talos upgrade-*` recipes still exist for when that is not an option.
+
+Dependencies are kept current by [Renovate](https://www.mend.io/renovate). Routine updates are batched
+to Saturday morning; anything flagged as a vulnerability ignores the schedule and opens a PR
+immediately. Every pull request runs [flux-local](https://github.com/allenporter/flux-local) to diff
+the rendered manifests before anything reaches the cluster.
 
 ## 🤝 Acknowledgments
 
