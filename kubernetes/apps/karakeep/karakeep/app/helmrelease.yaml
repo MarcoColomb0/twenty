@@ -74,7 +74,7 @@ spec:
               # lever on how long a bookmark takes. 2048 is the default and is
               # about right here.
               INFERENCE_CONTEXT_LENGTH: "2048"
-              INFERENCE_LANG: italian
+              INFERENCE_LANG: english
               # Text tagging only. A vision model over CPU on this hardware
               # would take minutes per screenshot.
               INFERENCE_ENABLE_AUTO_TAGGING: "true"
