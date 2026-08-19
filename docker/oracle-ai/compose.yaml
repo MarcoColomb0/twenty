@@ -40,10 +40,16 @@ services:
       # re-issuing, and Let's Encrypt rate-limits that, so keep the volume.
       - caddy_data:/data
       - caddy_config:/config
-    # Values come from the SOPS-encrypted .env beside this file. doco-cd
-    # detects and decrypts it at deploy time -- detection is content-based
-    # (the file contains both "sops" and "ENC["), so no naming convention is
-    # needed beyond the .env extension.
+    # Values come from the encrypted .env beside this file, which doco-cd
+    # decrypts at deploy time.
+    #
+    # Careful with wording here. doco-cd decides whether a file is encrypted by
+    # searching its content for two marker strings, so quoting those markers in
+    # a comment is enough to make a plaintext file look encrypted. An earlier
+    # version of this comment did exactly that, and the whole stack failed to
+    # deploy because doco-cd could not find the metadata it then expected.
+    # Never name those markers in any file under this directory -- see
+    # ../README.md, which is outside working_dir and can discuss them safely.
     environment:
       AI_TOKEN: ${AI_TOKEN:?set AI_TOKEN in .env}
       AI_HOSTNAME: ${AI_HOSTNAME:?set AI_HOSTNAME in .env}

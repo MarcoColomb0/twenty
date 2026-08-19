@@ -55,6 +55,21 @@ grep -c 'ENC\[' docker/oracle-ai/.env      # must be > 0 before committing
 `AI_TOKEN` is the same value the cluster uses as `OPENAI_API_KEY` in the
 karakeep secret.
 
+## A trap worth knowing
+
+doco-cd decides a file is encrypted by searching its **content** for two marker
+strings — the tool name and the ciphertext prefix — rather than by filename or
+extension. A plaintext file that merely mentions both is therefore treated as
+encrypted, and the deployment fails with `sops metadata not found` before
+anything starts.
+
+This is not hypothetical: a comment in `oracle-ai/compose.yaml` explaining that
+very mechanism quoted both markers, and it took the whole stack down.
+
+So: never write both markers into any file under a stack's `working_dir`. This
+README sits above the stack directories and is not scanned, which is why it can
+describe the rule at all.
+
 ## Bootstrap on the Oracle box
 
 ```sh
