@@ -15,61 +15,6 @@ spec:
         strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
-        initContainers:
-          # A native sidecar: the kubelet starts it first, holds the other two
-          # until its startup probe passes, and keeps it running for the life
-          # of the pod. Everything shares its network namespace, so the other
-          # containers have no interface of their own and no route except the
-          # tunnel. Its firewall rules outlive the container, so a dead tunnel
-          # drops packets rather than falling back to the node's default route.
-          net:
-            image:
-              repository: ${PZ8NET_IMAGE}
-              tag: ${PZ8NET_TAG}
-            restartPolicy: Always
-            envFrom:
-              - secretRef:
-                  name: pz8-net
-            probes:
-              startup:
-                enabled: true
-                custom: true
-                spec:
-                  # Not a tcpSocket probe: the killswitch drops everything
-                  # arriving on a port that was not explicitly opened, so a
-                  # probe from the kubelet can never reach the control server
-                  # and the sidecar would hang at started=false forever. Run
-                  # the image's own healthcheck instead -- it tests the tunnel
-                  # rather than a listening socket, and needs nothing open.
-                  exec:
-                    command:
-                      - "/gluetun-entrypoint"
-                      - "healthcheck"
-                  periodSeconds: 5
-                  failureThreshold: 60
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop:
-                  - "ALL"
-                add:
-                  # Create the interface and install the firewall rules that
-                  # are the killswitch.
-                  - "NET_ADMIN"
-                  # Without it the health check cannot open an ICMP socket and
-                  # falls back to DNS lookups, so a DNS blip during a reconnect
-                  # reads as a dead tunnel and restarts it -- which produces
-                  # another blip. Two restarts chained that way here.
-                  - "NET_RAW"
-                  # Only to own its state file: "clearing public IP data:
-                  # chown /tmp/gluetun/ip: operation not permitted".
-                  - "CHOWN"
-            resources:
-              requests:
-                cpu: 25m
-                memory: 64Mi
-              limits:
-                memory: 256Mi
         containers:
           app:
             image:
@@ -108,17 +53,10 @@ spec:
             image:
               repository: ${PZ8PRX_IMAGE}
               tag: ${PZ8PRX_TAG}
-            # The image's entrypoint starts a tunnel client of its own before
-            # handing over, and it has no off switch -- the branch it takes
-            # when the mode is not its userspace one is the official daemon,
-            # which then fails with "Registration Missing due to: Daemon
-            # Startup" and costs 25s of every start. Egress is already handled
-            # for the whole pod, so skip the wrapper and start the app the way
-            # the entrypoint's last two lines do.
-            command:
-              - /bin/sh
-              - -c
-              - cd /app && PYTHONPATH=/app exec python app.py
+            # No command override: the image's entrypoint brings up its own
+            # userspace tunnel client and exposes it as a local SOCKS5 proxy
+            # before starting the app, and that is now the only egress
+            # treatment in this pod.
             env:
               # Both images default to 7860 and share one network namespace,
               # so the second one has to move. app reaches it on loopback.
@@ -148,17 +86,6 @@ spec:
               limits:
                 memory: 2Gi
     defaultPodOptions:
-      # Without this the other containers keep the cluster resolver, and every
-      # lookup would leave through the LAN resolver outside the tunnel while
-      # the traffic itself went through it. Nothing here needs cluster DNS --
-      # the only cross-container call is over loopback.
-      dnsPolicy: None
-      dnsConfig:
-        nameservers:
-          - "127.0.0.1"
-        options:
-          - name: ndots
-            value: "1"
       securityContext:
         # One image starts as its own unprivileged user and the other as root,
         # so neither can be forced here without breaking one of them.
@@ -170,23 +97,6 @@ spec:
           pz8:
             prx:
               - path: /data
-      # The sidecar caches its state here and cannot write to the image's own
-      # filesystem: "persisting public ip address: open /tmp/gluetun/ip:
-      # permission denied".
-      netstate:
-        type: emptyDir
-        advancedMounts:
-          pz8:
-            net:
-              - path: /tmp/gluetun
-      tun:
-        type: hostPath
-        hostPath: /dev/net/tun
-        hostPathType: CharDevice
-        advancedMounts:
-          pz8:
-            net:
-              - path: /dev/net/tun
       runtime:
         type: secret
         name: pz8-env
