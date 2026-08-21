@@ -107,7 +107,9 @@ spec:
         # --- storage ----------------------------------------------------------
         - id: longhorn_volume_count
           title: Volumes
-          query: count(longhorn_volume_state)
+          # Every longhorn-manager exports the whole volume list, so a plain
+          # count is one series per volume per node -- 162 for 27 volumes.
+          query: count(count by (volume) (longhorn_volume_state))
           valueExpr: string(int(result))
           colorExpr: '"green"'
           icon: mdi:database-outline
