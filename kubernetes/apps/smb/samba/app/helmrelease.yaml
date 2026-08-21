@@ -54,7 +54,7 @@ spec:
                 [data]; path = /shares/data; valid users = mc; guest ok = no;
                 read only = no; browseable = yes; force user = mc;
                 force group = mc; create mask = 0664; directory mask = 0775;
-                veto files = /._*/.DS_Store/.Trashes/.TemporaryItems/;
+                veto files = /._*/.DS_Store/.Trashes/.TemporaryItems/lost+found/;
                 delete veto files = yes
             envFrom:
               # ACCOUNT_mc -- the image reads the account password from the
