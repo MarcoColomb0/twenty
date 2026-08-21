@@ -15,6 +15,45 @@ spec:
         strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
+        initContainers:
+          # A native sidecar: the kubelet starts it first, holds the other two
+          # until its startup probe passes, and keeps it running for the life
+          # of the pod. Everything shares its network namespace, so the other
+          # containers have no interface of their own and no route except the
+          # tunnel. Its firewall rules outlive the container, so a dead tunnel
+          # drops packets rather than falling back to the node's default route.
+          net:
+            image:
+              repository: ${PZ8NET_IMAGE}
+              tag: ${PZ8NET_TAG}
+            restartPolicy: Always
+            envFrom:
+              - secretRef:
+                  name: pz8-net
+            probes:
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: 8000
+                  periodSeconds: 5
+                  failureThreshold: 60
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+                # Required to create the interface and install the firewall
+                # rules that are the killswitch.
+                add:
+                  - "NET_ADMIN"
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
         containers:
           app:
             image:
@@ -82,6 +121,17 @@ spec:
               limits:
                 memory: 2Gi
     defaultPodOptions:
+      # Without this the other containers keep the cluster resolver, and every
+      # lookup would leave through the LAN resolver outside the tunnel while
+      # the traffic itself went through it. Nothing here needs cluster DNS --
+      # the only cross-container call is over loopback.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - "127.0.0.1"
+        options:
+          - name: ndots
+            value: "1"
       securityContext:
         # One image starts as its own unprivileged user and the other as root,
         # so neither can be forced here without breaking one of them.
@@ -93,6 +143,14 @@ spec:
           pz8:
             prx:
               - path: /data
+      tun:
+        type: hostPath
+        hostPath: /dev/net/tun
+        hostPathType: CharDevice
+        advancedMounts:
+          pz8:
+            net:
+              - path: /dev/net/tun
       runtime:
         type: secret
         name: pz8-env
