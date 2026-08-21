@@ -52,10 +52,18 @@ spec:
               capabilities:
                 drop:
                   - "ALL"
-                # Required to create the interface and install the firewall
-                # rules that are the killswitch.
                 add:
+                  # Create the interface and install the firewall rules that
+                  # are the killswitch.
                   - "NET_ADMIN"
+                  # Without it the health check cannot open an ICMP socket and
+                  # falls back to DNS lookups, so a DNS blip during a reconnect
+                  # reads as a dead tunnel and restarts it -- which produces
+                  # another blip. Two restarts chained that way here.
+                  - "NET_RAW"
+                  # Only to own its state file: "clearing public IP data:
+                  # chown /tmp/gluetun/ip: operation not permitted".
+                  - "CHOWN"
             resources:
               requests:
                 cpu: 25m

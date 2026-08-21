@@ -17,6 +17,7 @@ stringData:
   DOT: ENC[AES256_GCM,data:DFM=,iv:JUojix6zIW7IGXYMoCEhb8T0Ak1TXEBu+6GkGO2Bf4o=,tag:N6yk0ec5TyigO4aLdI9deA==,type:str]
   DNS_KEEP_NAMESERVER: ENC[AES256_GCM,data:k/eV,iv:vMPyMu2KeYXR/VvcshKOMe1yx65JPrmML57gUqsr8jI=,tag:RFRXhrGwFIcwT4xBj4Mn6g==,type:str]
   VERSION_INFORMATION: ENC[AES256_GCM,data:xUP+,iv:JpXnm/ys1z4W5ekGIzPt3jIQCeyvNWPHD1/DFuTjh3Y=,tag:ZhUdqXo3N2dhqpEYOMJHIg==,type:str]
+  PUBLICIP_API: ENC[AES256_GCM,data:DILbHoryz7x+sg==,iv:70VYKcZd+3h8EnwRYUGhKipLTMdZxWbG2A85k3RXlKU=,tag:8f2POUecaein3Yonr1NNGw==,type:str]
 sops:
   age:
     - enc: |
@@ -29,7 +30,7 @@ sops:
         -----END AGE ENCRYPTED FILE-----
       recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
   encrypted_regex: ^(data|stringData)$
-  lastmodified: "2026-08-21T15:08:17Z"
-  mac: ENC[AES256_GCM,data:tV0XJ9nsRTYABp+khOqhMGB2CcDDINaDBQC/fYpAhpsK7ZnaXuoyaIVImtTQp4UUDy0ZehI/HoEgzsJny+uC0ZezSxiDWF9fUuLmPUE2GB4YMuadAUmsyz3IVytkIsjIPpXMdk6YYtkANeJG3r813OFaypPpDTkCeJNES4/sO70=,iv:KqCGlMEovCkxKTM6TbUiv4A7w7m/03/x5iSX6BtHSBA=,tag:ohJzzaVyagB8kfYM76vQWg==,type:str]
+  lastmodified: "2026-08-21T15:27:48Z"
+  mac: ENC[AES256_GCM,data:PPP6UMUy8iCw1tAHcbsAwJaGliJlM9xcEXQq1QapGe381T9W6nu+GEibLQVAppjGfPIkr+7Q2aENEY/CqhywPtePNKhRsGk600EYxMXwNmTyH3+yvoOUsXcTXLUm7Ak2hIE5mQW0hfZ0FhRSRtKCOvm34m4pbvzzEknX/wNgExI=,iv:m8JzRpuh+qFqksvo2EYGrOZWhLkIxjBm1ay5Y6mQraU=,tag:gJEGhCnwjXHOWH0IsYh/uw==,type:str]
   mac_only_encrypted: true
   version: 3.13.3
