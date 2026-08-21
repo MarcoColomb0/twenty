@@ -35,8 +35,16 @@ spec:
                 enabled: true
                 custom: true
                 spec:
-                  tcpSocket:
-                    port: 8000
+                  # Not a tcpSocket probe: the killswitch drops everything
+                  # arriving on a port that was not explicitly opened, so a
+                  # probe from the kubelet can never reach the control server
+                  # and the sidecar would hang at started=false forever. Run
+                  # the image's own healthcheck instead -- it tests the tunnel
+                  # rather than a listening socket, and needs nothing open.
+                  exec:
+                    command:
+                      - "/gluetun-entrypoint"
+                      - "healthcheck"
                   periodSeconds: 5
                   failureThreshold: 60
             securityContext:
@@ -143,6 +151,15 @@ spec:
           pz8:
             prx:
               - path: /data
+      # The sidecar caches its state here and cannot write to the image's own
+      # filesystem: "persisting public ip address: open /tmp/gluetun/ip:
+      # permission denied".
+      netstate:
+        type: emptyDir
+        advancedMounts:
+          pz8:
+            net:
+              - path: /tmp/gluetun
       tun:
         type: hostPath
         hostPath: /dev/net/tun
