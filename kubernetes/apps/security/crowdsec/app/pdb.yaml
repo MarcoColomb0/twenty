@@ -17,14 +17,10 @@ spec:
     matchLabels:
       k8s-app: crowdsec
       type: appsec
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: crowdsec-lapi
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      k8s-app: crowdsec
-      type: lapi
+      # There is deliberately no budget for crowdsec-lapi. It is a single replica that
+      # owns two ReadWriteOnce volumes -- a SQLite database and its config -- so it
+      # cannot be scaled out, and minAvailable: 1 against one pod yields allowed=0.
+      # That is unsatisfiable rather than protective: it blocked every node drain for
+      # days, with tuppr rolling the cordon back every 12s and the upgrade stuck in
+      # Draining. A workload that already uses the Recreate strategy has accepted this
+      # downtime anyway.
