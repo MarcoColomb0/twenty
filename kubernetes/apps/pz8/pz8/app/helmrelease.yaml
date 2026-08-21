@@ -86,6 +86,19 @@ spec:
               limits:
                 memory: 2Gi
     defaultPodOptions:
+      # The cluster is IPv4-only, but these two names resolve to AAAA records
+      # as well and prx's client picks one and gives up:
+      # "dial tcp [2606:4700::6810:c052]:443: connect: network is unreachable".
+      # Registration then never completes, its local SOCKS5 listener never
+      # starts, and every fetch through it fails with "Host unreachable".
+      # Pinning the v4 anycast addresses takes DNS out of the path entirely.
+      hostAliases:
+        - ip: 104.16.192.82
+          hostnames:
+            - "api.cloudflareclient.com"
+        - ip: 162.159.192.1
+          hostnames:
+            - "engage.cloudflareclient.com"
       securityContext:
         # One image starts as its own unprivileged user and the other as root,
         # so neither can be forced here without breaking one of them.

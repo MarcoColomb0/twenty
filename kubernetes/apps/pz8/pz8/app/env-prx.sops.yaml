@@ -6,6 +6,7 @@ metadata:
 stringData:
   API_PASSWORD: ENC[AES256_GCM,data:Y2JVQc2ssRklWoqLSnyMftgh9i0tQq5jn+4Qm1tzm5U=,iv:5rNhclZYOq83o36Lhvf44dz4kZ3NNM0ufG5f53smyzA=,tag:xk8j1hu0BPynbTE1k4pklg==,type:str]
   WARP_MODE: ENC[AES256_GCM,data:pVG9R8eQqhKa,iv:QeLfUyQfm9sx+J8KIxkZMnY5MUIK87KjnUtEVIx99Hk=,tag:Xm3R3w6wU4GpLT3dekmCQA==,type:str]
+  WARP_DIR: ENC[AES256_GCM,data:PAmanYvDL+uULw==,iv:hkMyiXtVBsdxFcUNcxB0GrUyVtjvb0Jzh/rKOo3WL50=,tag:tdZAu6F2fFgbPvHEq9Q7iA==,type:str]
 sops:
   age:
     - enc: |
@@ -18,7 +19,7 @@ sops:
         -----END AGE ENCRYPTED FILE-----
       recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
   encrypted_regex: ^(data|stringData)$
-  lastmodified: "2026-08-21T15:41:37Z"
-  mac: ENC[AES256_GCM,data:02TPQWWRBJjAVpEGaBZKRmDMhrVcjBavNqMSPddMYKP1ZBv5d+zC1Dy4Md7FsuL1ve+Q1qHpJi3Uvbc7uwVI7NXo7f4DPiNoZtzl0Ai+1DjqjTl1/OGVdcj/gCyXRvWuftkjf3MQfAdnsXIlFHMY+r+iuRErlmnpRW8t/Y/L9MY=,iv:1DNqa0Ce/kXd1lo5HJIl4BznZn9VllLlNlNrFGmDDt0=,tag:/q1QrIGKQKoesWt5kQ0kww==,type:str]
+  lastmodified: "2026-08-21T15:53:22Z"
+  mac: ENC[AES256_GCM,data:my4f1i9zakIyO9e/RX7PlsnAR2DWS2IhKxS/ZY7j8b8nzXZ5uPLTZWbbxV5Rvo5ZXlKPnoQcD/eoZVwVkaCA6PavBsS6n8XsVsltKZP4s2BqzNnBwMGBT85FYNK1zZ2I/gu5hU4BpA546cH/h5yHdiD1zFFwJzh2a74vmUwFs48=,iv:gF7RoGv/7PneORCODdS2LrlfwU1acpw0Lo3fesfB3oE=,tag:azNbIFNiFdfEUDUp5UEexA==,type:str]
   mac_only_encrypted: true
   version: 3.13.3
