@@ -52,10 +52,18 @@ spec:
               capabilities:
                 drop:
                   - "ALL"
-                # Required to create the interface and install the firewall
-                # rules that are the killswitch.
                 add:
+                  # Create the interface and install the firewall rules that
+                  # are the killswitch.
                   - "NET_ADMIN"
+                  # Without it the health check cannot open an ICMP socket and
+                  # falls back to DNS lookups, so a DNS blip during a reconnect
+                  # reads as a dead tunnel and restarts it -- which produces
+                  # another blip. Two restarts chained that way here.
+                  - "NET_RAW"
+                  # Only to own its state file: "clearing public IP data:
+                  # chown /tmp/gluetun/ip: operation not permitted".
+                  - "CHOWN"
             resources:
               requests:
                 cpu: 25m
@@ -100,6 +108,17 @@ spec:
             image:
               repository: ${PZ8PRX_IMAGE}
               tag: ${PZ8PRX_TAG}
+            # The image's entrypoint starts a tunnel client of its own before
+            # handing over, and it has no off switch -- the branch it takes
+            # when the mode is not its userspace one is the official daemon,
+            # which then fails with "Registration Missing due to: Daemon
+            # Startup" and costs 25s of every start. Egress is already handled
+            # for the whole pod, so skip the wrapper and start the app the way
+            # the entrypoint's last two lines do.
+            command:
+              - /bin/sh
+              - -c
+              - cd /app && PYTHONPATH=/app exec python app.py
             env:
               # Both images default to 7860 and share one network namespace,
               # so the second one has to move. app reaches it on loopback.
