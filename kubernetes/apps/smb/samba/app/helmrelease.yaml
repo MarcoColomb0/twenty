@@ -32,11 +32,19 @@ spec:
               # UID 1000 matches the VolSync mover, which runs as 1000:1000 and
               # has to read every file it backs up.
               UID_mc: "1000"
+              # Deliberately no "restrict anonymous = 2" below. Windows opens
+              # an anonymous session to IPC$ before it authenticates to any
+              # share, and refusing that makes Explorer stall and then report
+              # error 67, ERROR_BAD_NET_NAME -- "the network name cannot be
+              # found" -- with the server healthy and the share present. macOS
+              # never probes that way, so it mounted fine and only Windows
+              # broke. All the setting bought was hiding the share *names*
+              # from an unauthenticated lister; the contents were never at
+              # risk, since the share is valid users = mc with guest refused.
               SAMBA_GLOBAL_STANZA: >-
                 server min protocol = SMB3_00;
                 server smb encrypt = required;
                 smb ports = 445;
-                restrict anonymous = 2;
                 map to guest = never;
                 load printers = no;
                 printing = bsd;
