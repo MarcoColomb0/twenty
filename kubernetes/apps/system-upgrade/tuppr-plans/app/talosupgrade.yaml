@@ -13,6 +13,26 @@ spec:
     # supported upgrade path -- stepping through minor releases is on us.
     # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
     version: v1.13.9
+  # Force delete rather than evict. Longhorn keeps a PodDisruptionBudget on each
+  # instance-manager at allowed=0 for as long as any volume is attached to that
+  # node, and those volumes only detach once their pods are gone -- which the
+  # drain is what does. Eviction cannot break that circle: the drain fails on the
+  # instance-manager, tuppr rolls the cordon back, the pods reschedule onto the
+  # node again, and it repeats every 12s indefinitely. Three rollouts stalled
+  # here, each cleared by deleting pods and PVCs by hand.
+  #
+  # The cost is that this bypasses every PodDisruptionBudget, including CNPG's
+  # -primary ones. A force-deleted primary is an ungraceful failover rather than
+  # a switchover -- equivalent to the node crashing, which CNPG already handles,
+  # and WAL is archived continuously so nothing is lost. waitForVolumeDetach
+  # below still holds the reboot until the volumes have actually detached.
+  #
+  # spec.drain is marked deprecated in favour of "Talos policy drain
+  # configuration", but spec.policy exposes only nodrain -- there is no eviction
+  # control there yet, so this is the only field that does it.
+  drain:
+    enabled: true
+    disableEviction: true
   policy:
     # Longhorn volumes are ReadWriteOnce. A fast reboot can orphan the mount and
     # pin the volume to the old node, which surfaces later as a Multi-Attach
