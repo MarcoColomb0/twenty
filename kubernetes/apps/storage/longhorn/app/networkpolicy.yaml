@@ -1,0 +1,30 @@
+---
+# The longhorn chart renders its internal NetworkPolicies whenever
+# networkPolicies.restrictInternalTraffic is true -- which is the default, and
+# is *not* gated by networkPolicies.enabled (that only covers the ingress ones).
+# Its longhorn-manager policy allows ingress from longhorn components only, so
+# Prometheus scrapes of :9500/metrics time out and every longhorn_* series
+# disappears -- which is what emptied the Volumes and Disk Used badges.
+# NetworkPolicies are additive, so allow the scrape back rather than dropping
+# the chart's restriction.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: longhorn-manager-metrics
+spec:
+  podSelector:
+    matchLabels:
+      app: longhorn-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9500
+          protocol: TCP
