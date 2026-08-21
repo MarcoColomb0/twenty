@@ -7,4 +7,5 @@ resources:
   - ./ocirepository.yaml
   - ./pvc.yaml
   - ./env-app.sops.yaml
+  - ./env-net.sops.yaml
   - ./env-prx.sops.yaml
