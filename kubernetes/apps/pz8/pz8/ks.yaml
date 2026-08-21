@@ -1,0 +1,23 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: pz8
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/pz8/pz8/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+      # Image references live here rather than in the manifests, so this
+      # repository never spells out what is being run.
+      - name: pz8-vars
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: pz8
+  wait: false

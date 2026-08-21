@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pz8-env
+stringData:
+  run: ENC[AES256_GCM,data:5LCil2K8sg8C6J4Lm4Q7SoBS9G7yNbAED7mLnnWnqL0R53l9Leij9mISg6pwG+2hb6cGG+fY2mrgbNWhC97E5+AMmvMagPj902GSUFWF7k22x6rv4VmkHj6bl4lx5dJGApoBlH2Lvugagln0t+IkBKi56nTBt7bUUtFouJ6Cssm8l8tTlwqk28CFm3WyWq7DTxfa6PoHB5nfT/rjuP6PgOjbrKmiNgP75gcy/XOGmEnAzrfND2dftsz5+IUeEqTfUWIiyzvxNyT2B2uG+pCfP+a0bpqk98/8k0bCdajmLY27iVbpVyxSxAtQAvF6U4W9nBVlnREyZRYONP4/1auI10MA+eL2NUebhSY26mdbYtKWvaFy2a5tbhjakHU79TXtdkD99ag4kyBRJ6uqeArI8YNKs0+Dxb120rAl71FNWA+hcHF61jbovwzeRxmtvowokGwk9FcHsiIorCvB1e01Ng==,iv:Dv1yQTBH+33aLDl/SG3DXMPckkNOlUeBCLcPmKxohGA=,tag:feNxUkwB7zIKePHY8DKS3g==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4Z0dveHZGZ083S1hIQmNS
+        QTI5cFVkQ1NJbm52QTZ5RGVyTThCcGFWcGpVCnNJZDJHRlBaS3ZhSC9YWWxZSC81
+        RXM1bXZkazk2YWp5OUtQbjRWNWQ2Y2cKLS0tIGVLMkFqeVVyTUNKUTZPTk1WT3pR
+        NjdCSG9wSjRrdzkrTlFCd1BaVklRQjgKAVbKp1TiSSzW5PdZ+wtJIXxmAxmt6MSs
+        uQAdmyYK+y+8fMPdOiHFhx2XYV5JekcPCRPJdXd2ayuvhMWaA+6l6w==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-08-21T14:36:49Z"
+  mac: ENC[AES256_GCM,data:/QI6PBEx00d9SwN6EOJ2nh3oXq9fsEPAw2VXrZzVTfb+WxAdY2JVeuGV2xQI4Mx0QcX8M6IX/t0qv1hgRVwFOI0wXXwVkM4eMIwY/nS7L31ke0NWDEbvStlx48fLNG/W7T4lfYosxW0hpAqptcFocXASfxX3W9JI4qYg5coAKzI=,iv:90f6R4mFUbHvqJZnbE3wg+/5joScbGj6VfhUG74SSFI=,tag:bXMGOuUCDQEcTyXiNybxOQ==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

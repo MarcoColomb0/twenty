@@ -1,0 +1,135 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: pz8
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: pz8
+  interval: 1h
+  values:
+    controllers:
+      pz8:
+        # prx holds a ReadWriteOnce volume, so two pods must never overlap.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ${PZ8_IMAGE}
+              tag: ${PZ8_TAG}
+            # SOPS encrypts values but never key names, so an envFrom Secret
+            # would publish the whole variable list. The mounted script holds
+            # the exports and the exec line, and all of it is ciphertext.
+            command:
+              - /bin/sh
+              - /var/run/pz8/run
+            probes:
+              # tcpSocket rather than httpGet: a path here would describe the
+              # workload, which is the one thing this deployment must not do.
+              liveness: &appProbes
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: &appPort 7860
+                  initialDelaySeconds: 20
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *appProbes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+          prx:
+            image:
+              repository: ${PZ8PRX_IMAGE}
+              tag: ${PZ8PRX_TAG}
+            env:
+              # Both images default to 7860 and share one network namespace,
+              # so the second one has to move. app reaches it on loopback.
+              PORT: &prxPort 7861
+            envFrom:
+              - secretRef:
+                  name: pz8prx-env
+            probes:
+              liveness: &prxProbes
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: *prxPort
+                  initialDelaySeconds: 20
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *prxProbes
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 2Gi
+    defaultPodOptions:
+      securityContext:
+        # One image starts as its own unprivileged user and the other as root,
+        # so neither can be forced here without breaking one of them.
+        runAsNonRoot: false
+    persistence:
+      data:
+        existingClaim: pz8prx-data
+        advancedMounts:
+          pz8:
+            prx:
+              - path: /data
+      runtime:
+        type: secret
+        name: pz8-env
+        advancedMounts:
+          pz8:
+            app:
+              - path: /var/run/pz8
+                readOnly: true
+    service:
+      app:
+        ports:
+          http:
+            port: *appPort
+      prx:
+        controller: pz8
+        ports:
+          http:
+            port: *prxPort
+    route:
+      app:
+        hostnames:
+          - "pz8.${SECRET_DOMAIN}"
+        # Internal gateway only. cloudflare-dns watches envoy-external alone,
+        # so nothing here can reach public DNS.
+        parentRefs: &internal
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *appPort
+      prx:
+        hostnames:
+          - "pz8prx.${SECRET_DOMAIN}"
+        parentRefs: *internal
+        rules:
+          - backendRefs:
+              - identifier: prx
+                port: *prxPort
