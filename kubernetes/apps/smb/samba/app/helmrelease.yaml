@@ -1,0 +1,111 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: samba
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: samba
+  interval: 1h
+  values:
+    controllers:
+      samba:
+        # One ReadWriteOnce volume behind it, so two pods must never overlap.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              # smbd only -- the avahi and wsdd variants exist to advertise the
+              # server over mDNS/WS-Discovery, which needs host networking and
+              # NET_ADMIN to be of any use. Clients here connect by name
+              # through the LAN resolver instead.
+              repository: ghcr.io/servercontainers/samba
+              tag: smbd-only-latest@sha256:a789aa42c2e5db804fab5fb5dd5f2d4343a9a8a7789e4a191aab45e993c15d4f
+            env:
+              AVAHI_DISABLE: "true"
+              WSDD2_DISABLE: "true"
+              NETBIOS_DISABLE: "true"
+              SAMBA_CONF_SERVER_STRING: samba
+              # UID 1000 matches the VolSync mover, which runs as 1000:1000 and
+              # has to read every file it backs up.
+              UID_mc: "1000"
+              SAMBA_GLOBAL_STANZA: >-
+                server min protocol = SMB3_00;
+                server smb encrypt = required;
+                smb ports = 445;
+                restrict anonymous = 2;
+                map to guest = never;
+                load printers = no;
+                printing = bsd;
+                printcap name = /dev/null;
+                disable spoolss = yes;
+                vfs objects = catia fruit streams_xattr;
+                fruit:metadata = stream;
+                fruit:model = MacSamba;
+                fruit:posix_rename = yes;
+                fruit:zero_file_id = yes;
+                fruit:veto_appledouble = no;
+                fruit:wipe_intentionally_left_blank_rfork = yes;
+                fruit:delete_empty_adfiles = yes
+              SAMBA_VOLUME_CONFIG_data: >-
+                [data]; path = /shares/data; valid users = mc; guest ok = no;
+                read only = no; browseable = yes; force user = mc;
+                force group = mc; create mask = 0664; directory mask = 0775;
+                veto files = /._*/.DS_Store/.Trashes/.TemporaryItems/;
+                delete veto files = yes
+            envFrom:
+              # ACCOUNT_mc -- the image reads the account password from the
+              # environment and never writes it anywhere readable.
+              - secretRef:
+                  name: samba-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: &port 445
+                  initialDelaySeconds: 15
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                memory: 1Gi
+    defaultPodOptions:
+      securityContext:
+        # smbd starts as root and drops to the connecting account per session,
+        # so it cannot run unprivileged. fsGroup is what lets that account own
+        # the share contents on a freshly provisioned volume.
+        runAsNonRoot: false
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: samba-data
+        globalMounts:
+          - path: /shares/data
+    service:
+      app:
+        controller: samba
+        type: LoadBalancer
+        annotations:
+          # The pool is the whole /24, so this has to be pinned or it can take
+          # the address of a real host.
+          lbipam.cilium.io/ips: "192.168.100.105"
+          # k8s-gateway watches Services, so this resolves on the LAN only.
+          # cloudflare-dns takes its records from CRDs and HTTPRoutes, never
+          # from a Service, so nothing about this reaches public DNS.
+          external-dns.alpha.kubernetes.io/hostname: "smb.${SECRET_DOMAIN}"
+        externalTrafficPolicy: Cluster
+        ports:
+          smb:
+            port: *port
+            protocol: TCP

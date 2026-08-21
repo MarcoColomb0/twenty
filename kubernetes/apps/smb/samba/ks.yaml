@@ -1,0 +1,26 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: samba
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/smb/samba/app
+  postBuild:
+    substitute:
+      APP: samba
+      VOLSYNC_CLAIM: samba-data
+      # Late enough that the nightly database backups are done competing for
+      # the same uplink, and this one can be large.
+      VOLSYNC_SCHEDULE: "0 6 * * *"
+      VOLSYNC_CACHE_CAPACITY: 8Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: smb
+  wait: false
