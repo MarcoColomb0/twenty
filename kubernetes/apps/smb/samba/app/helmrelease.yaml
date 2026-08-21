@@ -50,12 +50,23 @@ spec:
                 fruit:veto_appledouble = no;
                 fruit:wipe_intentionally_left_blank_rfork = yes;
                 fruit:delete_empty_adfiles = yes
+              # Two deliberate choices in the lists below.
+              #
+              # "*RECYCLE.BIN" rather than the real name: Flux runs envsubst
+              # over this manifest, and a bare $RECYCLE would be read as a
+              # variable and substituted away, leaving ".BIN" behind. The
+              # wildcard matches the same directory without the sigil.
+              #
+              # Office lock files (~$doc.docx) are hidden, not vetoed. Word and
+              # Excel create them to claim write ownership, so blocking them
+              # outright makes documents open read-only.
               SAMBA_VOLUME_CONFIG_data: >-
                 [data]; path = /shares/data; valid users = mc; guest ok = no;
                 read only = no; browseable = yes; force user = mc;
                 force group = mc; create mask = 0664; directory mask = 0775;
-                veto files = /._*/.DS_Store/.Trashes/.TemporaryItems/;
-                delete veto files = yes
+                veto files = /._*/.DS_Store/.Trashes/.TemporaryItems/.Spotlight-V100/.DocumentRevisions-V100/.fseventsd/.apdisk/.AppleDouble/.AppleDB/.AppleDesktop/Network Trash Folder/Temporary Items/lost+found/Thumbs.db/thumbs.db/ehthumbs.db/Desktop.ini/desktop.ini/*RECYCLE.BIN/System Volume Information/;
+                delete veto files = yes;
+                hide files = /~*/
             envFrom:
               # ACCOUNT_mc -- the image reads the account password from the
               # environment and never writes it anywhere readable.
