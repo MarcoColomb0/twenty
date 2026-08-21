@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pz8prx-env
+stringData:
+  API_PASSWORD: ENC[AES256_GCM,data:Y2JVQc2ssRklWoqLSnyMftgh9i0tQq5jn+4Qm1tzm5U=,iv:5rNhclZYOq83o36Lhvf44dz4kZ3NNM0ufG5f53smyzA=,tag:xk8j1hu0BPynbTE1k4pklg==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5SExtVTR0Vk56cTU5RlNW
+        NE9ZNVpDQXRhMEVpZ3lHWGdxWXkzYytVU3hRCk05OHdGYVpCMUEwVm5sdlpDUzdq
+        VmRwNHJNREdIdUI0VDN5WVJEVytVZ3cKLS0tIGxOZWlyZDdXRHFnL25zeWJwRjd6
+        TEQxV1FxakpHNUJwSTJ0L0dkM2srbFEKlshrxr3uVZYIMBcKCsSNra7VZxmY1Lky
+        v5864DAFIgqAbROhxGICOhlXuQzjZYWMK+jPPlneCWnv6hJqKSu/fQ==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-08-21T13:26:41Z"
+  mac: ENC[AES256_GCM,data:NAVOaAimn/jpktGU5cP8x9aQfQRR3wRpvoC8n9ozwFUyEvJ0PvWmqpDkGEk8Pk4P0X5E/GljMZeKTPK+mqgkQ3qBE0o/UT6j4z8VH+UGXmKdGoJ8btWD6ovkdF3iAilgAYk4rL+cDB7Zi538E1URxBFEB1Ttasrfs1dQwZGWEEE=,iv:mCjv6Ago1lf/+e3pRsVUUevyiPA2alb1ffBwhrSOHIQ=,tag:8kuHeFJIfZCIxFkLAzO4dg==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

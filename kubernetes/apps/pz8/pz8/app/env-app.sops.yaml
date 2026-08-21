@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pz8-env
+stringData:
+  run: ENC[AES256_GCM,data:iItKDt4J/u6iOAZ7PruXG04dlZfo8ZppJQDZ7sMClKeQrfXn0YJ+R/rj+wdaVW14qVXyuVulFk3K7wosFPkKBllH+NAkxEZcpQZWECRNJNX74GyqJ8YfUahBlkxutpEsW1IH8kldkgMzZnuYYqP9FnCZ6BxwFGjatX7JhUo98kxVmckGNH6gyh4BiJtFzXgOHIJ0vAC1LnWdVYqXDD4q7BwkRNzkklGThcweHCdtcsUcPCcno6C0hASxNln7vlkV1hkcEUqblNFcv+is0bwu3oU9hjdD1WlKNqWu9iEDoXIjzoUld8516saAqDvcymkr0RTDrZGPMHS3WDsIVzBjaZbrZHejVZNP+bwhOvEA/eFEJZkkpLgOCZ2xp5Gs9i9pyJd8+KJaZR0joIpPQlT28+z8eQ3/4FBzkjN/vtryXuI=,iv:rcV+eonE6YPzr1xrkxGLYRV4yRqNQGJPMoAnT4WjzvA=,tag:hSqSnJQnCp3HyMTWJlMaBw==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4Z0dveHZGZ083S1hIQmNS
+        QTI5cFVkQ1NJbm52QTZ5RGVyTThCcGFWcGpVCnNJZDJHRlBaS3ZhSC9YWWxZSC81
+        RXM1bXZkazk2YWp5OUtQbjRWNWQ2Y2cKLS0tIGVLMkFqeVVyTUNKUTZPTk1WT3pR
+        NjdCSG9wSjRrdzkrTlFCd1BaVklRQjgKAVbKp1TiSSzW5PdZ+wtJIXxmAxmt6MSs
+        uQAdmyYK+y+8fMPdOiHFhx2XYV5JekcPCRPJdXd2ayuvhMWaA+6l6w==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-08-21T13:30:03Z"
+  mac: ENC[AES256_GCM,data:dcFONW/0FvtKpKA6ufNxtdNs5noH35c6NCqJEo2J3DStp7wVpfKGT58K+ivgCVqQLmX1q19RWzGzJ5cWq4/+CB04vXX14UyyJh+K2TPYTYuCFdutr0OH3U0lgzffKmPyQgieL+4Ge/tRAYbGwBj1V34JuvW9j+r2PbrDWpQxkY4=,iv:IYcIzNOgzx7hliMOomOM6uXcNuPI8wm8e3/tMTZ8he4=,tag:4Dy1M1BU7uI4jR570fUvCQ==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3
