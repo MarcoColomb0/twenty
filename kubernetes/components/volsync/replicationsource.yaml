@@ -28,7 +28,18 @@ spec:
     # restic keeps a local index cache. Too small and every run re-reads the
     # repository metadata over the network.
     cacheCapacity: "${VOLSYNC_CACHE_CAPACITY:=8Gi}"
-    cacheStorageClassName: "${VOLSYNC_CACHE_STORAGECLASS:=longhorn-single}"
+    # Two replicas, not longhorn-single, even though this cache is disposable.
+    # A one-replica volume is unevictable once detached: Longhorn cannot rebuild
+    # it elsewhere without attaching it first, so it holds an instance-manager
+    # PDB at allowed=0 and blocks the node's drain outright. tuppr then retries
+    # and rolls the cordon back every 12s, and the upgrade sits in Draining
+    # looking busy forever. That stalled three consecutive Talos rollouts, each
+    # cleared by hand-deleting cache PVCs.
+    #
+    # The single-replica default dates from when disk was tight. It is not any
+    # more: the caches total ~23Gi against more than a terabyte of headroom, and
+    # the second copy is what lets a drain proceed unattended.
+    cacheStorageClassName: "${VOLSYNC_CACHE_STORAGECLASS:=longhorn}"
     accessModes:
       - "ReadWriteOnce"
     moverSecurityContext:
