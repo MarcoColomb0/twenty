@@ -100,6 +100,17 @@ spec:
             image:
               repository: ${PZ8PRX_IMAGE}
               tag: ${PZ8PRX_TAG}
+            # The image's entrypoint starts a tunnel client of its own before
+            # handing over, and it has no off switch -- the branch it takes
+            # when the mode is not its userspace one is the official daemon,
+            # which then fails with "Registration Missing due to: Daemon
+            # Startup" and costs 25s of every start. Egress is already handled
+            # for the whole pod, so skip the wrapper and start the app the way
+            # the entrypoint's last two lines do.
+            command:
+              - /bin/sh
+              - -c
+              - cd /app && PYTHONPATH=/app exec python app.py
             env:
               # Both images default to 7860 and share one network namespace,
               # so the second one has to move. app reaches it on loopback.
