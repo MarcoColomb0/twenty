@@ -1,0 +1,27 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tailscale-operator
+spec:
+  # The chart carries the tailscale.com CRDs, and tailscale-connector applies
+  # CRs of those kinds. Waiting on the HelmRelease here is what keeps that
+  # second Kustomization from failing its first apply with "no matches for
+  # kind Connector" and then sitting on a one-hour retry.
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: tailscale-operator
+      namespace: network
+  interval: 1h
+  path: ./kubernetes/apps/network/tailscale-operator/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: network

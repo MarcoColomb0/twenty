@@ -1,0 +1,30 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tailscale-connector
+spec:
+  dependsOn:
+    # supplies the Connector and ProxyClass CRDs, and the operator that acts on
+    # them -- a CR applied before the CRD exists fails and then waits out the
+    # full interval
+    - name: tailscale-operator
+      namespace: network
+    # the subnet router's whole purpose is reaching this: tailnet DNS points at
+    # blocky on 192.168.100.104, so a router that comes up first would advertise
+    # a route to a resolver that is not there
+    - name: blocky
+      namespace: network
+  interval: 1h
+  path: ./kubernetes/apps/network/tailscale-connector/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: network
+  wait: false

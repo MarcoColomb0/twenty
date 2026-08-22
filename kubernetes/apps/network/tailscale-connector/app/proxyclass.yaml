@@ -1,0 +1,38 @@
+---
+# Applied to the subnet router pods the Connector creates. A ProxyClass is
+# cluster-scoped and is referenced by name from Connector.spec.proxyClass --
+# proxyConfig.defaultProxyClass in the chart does NOT cover Connectors, so this
+# has to be named explicitly there or none of it takes effect.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: subnet-router
+spec:
+  metrics:
+    # With tailnet DNS pointed at blocky, these two pods sit in the resolution
+    # path for every query the phone makes. A silent failure here looks like a
+    # dead internet connection, not like a Kubernetes problem, so they are
+    # scraped. Prometheus runs serviceMonitorSelectorNilUsesHelmValues: false,
+    # so this needs no selector label to be picked up.
+    enable: true
+    serviceMonitor:
+      enable: true
+  statefulSet:
+    pod:
+      # Two replicas on one node is one node's worth of redundancy. The labels
+      # are the ones the operator puts on every child resource:
+      # tailscale.com/parent-resource is the Connector's name.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              tailscale.com/parent-resource: home
+              tailscale.com/parent-resource-type: connector
+      tailscaleContainer:
+        resources:
+          requests:
+            cpu: 25m
+          limits:
+            memory: 256Mi
