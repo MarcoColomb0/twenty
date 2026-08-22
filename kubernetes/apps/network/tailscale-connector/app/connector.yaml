@@ -1,0 +1,27 @@
+---
+# The subnet router. Advertises the LAN to the tailnet so a phone or laptop
+# reaches every internal name without anything being published to the internet
+# -- no inbound port, no DDNS, no change to the router.
+#
+# 192.168.100.0/24 covers the API VIP (.100), both gateways (.101/.102),
+# k8s-gateway (.103), blocky (.104), the docker host (.11) and all three nodes.
+# That is the whole of what "local only" means here, so nothing else needs a
+# route and 192.168.1.0/24 stays out of reach of enrolled devices.
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: home
+spec:
+  # hostnamePrefix, not hostname: the CRD rejects hostname whenever replicas is
+  # greater than 1. Devices appear as twenty-net-0, twenty-net-1.
+  hostnamePrefix: twenty-net
+  # Tailscale fails a subnet route over to the surviving advertiser on its own,
+  # so this is genuinely two routers rather than a warm spare. One replica would
+  # make a single pod eviction a DNS outage on every connected device.
+  replicas: 2
+  tags:
+    - tag:k8s
+  proxyClass: subnet-router
+  subnetRouter:
+    advertiseRoutes:
+      - 192.168.100.0/24

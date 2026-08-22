@@ -1,0 +1,42 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tailscale-availability
+spec:
+  groups:
+    # Tailnet DNS points every connected device at blocky, so these two pods
+    # sit in the resolution path for every query the phone makes -- not only
+    # for names under the cluster domain. When they go, the device does not
+    # report a VPN problem, it reports that nothing resolves.
+    - name: tailscale.availability
+      rules:
+        # The operator generates the StatefulSet name as ts-<connector>-<rand>,
+        # so this matches on a prefix. A selector that matched nothing would
+        # look exactly like a healthy cluster, hence the absent() arm: it fires
+        # both when every replica is down and when the StatefulSet is gone.
+        - alert: TailscaleSubnetRouterDown
+          expr: |
+            sum(kube_statefulset_status_replicas_ready{namespace="network", statefulset=~"ts-home-.+"}) == 0
+              or absent(kube_statefulset_status_replicas_ready{namespace="network", statefulset=~"ts-home-.+"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Tailscale subnet router has no running replica
+            description: >-
+              192.168.100.0/24 is no longer advertised to the tailnet. Every
+              remote device loses the LAN and, because tailnet DNS resolves via
+              blocky on 192.168.100.104, loses name resolution entirely.
+
+        - alert: TailscaleSubnetRouterDegraded
+          expr: |
+            sum(kube_statefulset_status_replicas_ready{namespace="network", statefulset=~"ts-home-.+"}) < 2
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Tailscale subnet router is down to a single replica
+            description: >-
+              Route failover has nowhere left to fail over to. Remote access
+              still works and will keep working until this last pod moves.

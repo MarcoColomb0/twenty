@@ -1,0 +1,49 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tailscale-operator
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: tailscale-operator
+  interval: 1h
+  values:
+    # No fullnameOverride: this chart version does not have one. Every name is
+    # hardcoded -- the Deployment is "operator", the OAuth Secret it mounts is
+    # "operator-oauth", and the Secret it keeps its own tailnet device state in
+    # is "operator". secret.sops.yaml matches that name because it has to; the
+    # operator's pod will not start if operator-oauth is missing.
+    operatorConfig:
+      hostname: tailscale-operator
+      podAnnotations:
+        secret.reloader.stakater.com/reload: operator-oauth
+      image:
+        # Chart default is Docker Hub, which rate-limits anonymous pulls. The
+        # same images are synced to ghcr. Tag is left to appVersion so the
+        # chart version alone governs what runs, and Renovate has one thing to
+        # bump instead of two that can disagree.
+        repository: ghcr.io/tailscale/k8s-operator
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 256Mi
+    proxyConfig:
+      image:
+        repository: ghcr.io/tailscale/tailscale
+      # Inherited by the subnet router pods. tag:k8s is owned by
+      # tag:k8s-operator in tailscale/acl.hujson, and is what auto-approves the
+      # advertised route.
+      defaultTags: tag:k8s
+    # Default is true, and the chart renders the CRDs as ordinary templates
+    # rather than through Helm's crds/ directory, which is what lets Flux
+    # upgrade them on a version bump. Stated rather than assumed -- the
+    # Connector and ProxyClass in tailscale-connector depend on it.
+    installCRDs: true
+    apiServerProxyConfig:
+      # The subnet router already carries 192.168.100.100, so kubectl reaches
+      # the API over the VIP with the certificate SANs it already has. Enabling
+      # this would mean binding a tailnet identity to cluster-admin for no
+      # capability that is missing.
+      mode: "false"
