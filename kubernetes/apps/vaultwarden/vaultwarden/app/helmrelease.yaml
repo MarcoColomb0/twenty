@@ -19,7 +19,7 @@ spec:
           app:
             image:
               repository: ghcr.io/dani-garcia/vaultwarden
-              tag: 1.37.1
+              tag: 1.37.2
             env:
               # The OIDC callback URL is derived from this and cannot be set
               # separately, so it has to match the route below exactly.
