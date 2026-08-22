@@ -1,6 +1,6 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["github>home-operations/renovate-presets#7.0.0"],
+  extends: ["github>home-operations/renovate-presets#8.1.0"],
   // Routine updates land Saturday morning, so a broken chart has the weekend
   // to be noticed rather than appearing mid-week.
   schedule: ["every weekend"],
