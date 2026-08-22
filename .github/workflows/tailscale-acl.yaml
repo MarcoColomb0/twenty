@@ -1,0 +1,68 @@
+---
+name: "Tailscale ACL"
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "tailscale/acl.hujson"
+  pull_request:
+    branches:
+      - "main"
+    paths:
+      - "tailscale/acl.hujson"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  acl:
+    name: Tailscale ACL
+    # Skips cleanly until the tailnet exists and TS_TAILNET is set, so adding
+    # this workflow does not mean a red check on every PR in the meantime.
+    if: ${{ vars.TS_TAILNET != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # gitops-pusher refuses to overwrite a policy that changed in the console
+      # since its last push, and it tells them apart by a stored etag. Without
+      # this cache every run starts blind and assumes whatever is live is what
+      # it pushed last, which turns a console edit into a silent clobber.
+      - name: Restore etag cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ./version-cache.json
+          key: version-cache.json-${{ github.run_id }}
+          restore-keys: |
+            version-cache.json-
+
+      - name: Test
+        if: github.event_name == 'pull_request'
+        uses: tailscale/gitops-acl-action@5a4a17f5708e9bf96f4ee915a95e9f83c2eebe1a # v1.5.2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tailnet: ${{ vars.TS_TAILNET }}
+          policy-file: ./tailscale/acl.hujson
+          action: test
+
+      - name: Apply
+        if: github.event_name != 'pull_request'
+        uses: tailscale/gitops-acl-action@5a4a17f5708e9bf96f4ee915a95e9f83c2eebe1a # v1.5.2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tailnet: ${{ vars.TS_TAILNET }}
+          policy-file: ./tailscale/acl.hujson
+          action: apply
