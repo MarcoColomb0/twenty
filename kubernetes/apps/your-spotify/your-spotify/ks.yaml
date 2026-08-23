@@ -1,0 +1,43 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: your-spotify
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/your-spotify/your-spotify/app
+  postBuild:
+    substitute:
+      APP: your-spotify
+      VOLSYNC_CLAIM: your-spotify-mongodb
+      VOLSYNC_SCHEDULE: "45 4 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
+      # Direct rsyncs a *live* WiredTiger data directory. Journal replay
+      # recovers a crash, but it cannot repair a file set whose members were
+      # copied at different instants -- that is a torn copy, not a crash.
+      # Snapshot is atomic, so restic reads the exact equivalent of a power
+      # cut and mongod's journal replay handles it on restore.
+      #
+      # The component defaults to Direct because Snapshot on Longhorn
+      # provisions a whole new volume the size of the source's *request* every
+      # run. That was disqualifying for Immich at 150Gi. At 5Gi it is noise.
+      VOLSYNC_COPYMETHOD: Snapshot
+      # ...and the volume it provisions must not be single-replica: Longhorn
+      # cannot rebuild a one-replica volume without attaching it, so it pins an
+      # instance-manager PDB at allowed=0 and blocks the node's drain outright.
+      # The component still defaults this to longhorn-single.
+      VOLSYNC_STORAGECLASS: longhorn
+      # The mover reads files mongod wrote as uid 999 with umask 0077. Running
+      # it as anything else cannot read them.
+      VOLSYNC_UID: "999"
+      VOLSYNC_GID: "999"
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: your-spotify
+  wait: false
