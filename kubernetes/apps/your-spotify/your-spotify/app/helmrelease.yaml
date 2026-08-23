@@ -1,0 +1,201 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: your-spotify
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: your-spotify
+  interval: 1h
+  values:
+    controllers:
+      # Three controllers, not three containers in one pod: mongod needs a
+      # StatefulSet and the two app processes must be addressable separately
+      # by the HTTPRoute below.
+      server:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/yooooomi/your_spotify_server
+              tag: "1.20.0"
+            env:
+              TZ: &tz Europe/Rome
+              # The server reads TIMEZONE, not TZ, for bucketing listens into
+              # days. Getting it wrong shifts every daily statistic.
+              TIMEZONE: *tz
+              # Both endpoints are the same host: the route splits on /api and
+              # rewrites the prefix away before it reaches this container.
+              API_ENDPOINT: &api https://listens.${SECRET_DOMAIN}/api
+              CLIENT_ENDPOINT: https://listens.${SECRET_DOMAIN}
+              # app-template names Services <release>-<serviceKey>, and only
+              # renders the bare release name while exactly one service exists.
+              # Three exist here, so this name is stable.
+              MONGO_ENDPOINT: mongodb://your-spotify-mongodb:27017/your_spotify
+              PORT: &port 8080
+              LOG_LEVEL: info
+            envFrom:
+              - secretRef:
+                  name: your-spotify-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: *port
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+            securityContext: &securityContext
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+                memory: 256Mi
+              limits:
+                memory: 768Mi
+      web:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/yooooomi/your_spotify_client
+              tag: "1.20.0"
+            env:
+              TZ: *tz
+              # Baked into the served bundle at container start, so the browser
+              # calls the same public host it loaded the page from.
+              API_ENDPOINT: *api
+            probes:
+              liveness: &webprobes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: &webport 3000
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *webprobes
+            securityContext: *securityContext
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+      mongodb:
+        type: statefulset
+        statefulset:
+          podManagementPolicy: OrderedReady
+        containers:
+          app:
+            image:
+              repository: docker.io/library/mongo
+              tag: "8.3.8"
+            env:
+              TZ: *tz
+            probes:
+              liveness: &mongoprobes
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: &mongoport 27017
+                  initialDelaySeconds: 20
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *mongoprobes
+            securityContext: *securityContext
+            resources:
+              requests:
+                cpu: 25m
+                memory: 256Mi
+              # mongod reads the cgroup limit and sizes its WiredTiger cache at
+              # max(0.5 * (limit - 1GB), 256MB). At 1Gi that is the 256MB floor,
+              # which is ample for one account's listening history and keeps the
+              # database off the same footing as the apps around it.
+              limits:
+                memory: 1Gi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        # The mongo image ships no USER: it starts as root, chowns /data/db and
+        # drops to uid 999 itself. Pinning 999 here skips that branch entirely
+        # and fsGroup is what makes the volume writable instead -- which also
+        # keeps the VolSync mover (VOLSYNC_UID/GID 999) able to read what mongod
+        # writes with umask 0077.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: your-spotify-mongodb
+        advancedMounts:
+          mongodb:
+            app:
+              - path: /data/db
+    service:
+      server:
+        controller: server
+        primary: true
+        ports:
+          http:
+            port: *port
+      web:
+        controller: web
+        ports:
+          http:
+            port: *webport
+      mongodb:
+        controller: mongodb
+        ports:
+          http:
+            port: *mongoport
+    route:
+      app:
+        hostnames:
+          # Deliberately not "spotify.${SECRET_DOMAIN}". Google's automated
+          # scanner reads a Spotify-shaped login page on a spotify-named host as
+          # phishing and marks the *whole* domain Deceptive, not just the one
+          # subdomain -- see Yooooomi/your_spotify#254.
+          - "listens.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          # Order matters: the longer prefix has to be matched first.
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /api
+            filters:
+              - type: URLRewrite
+                urlRewrite:
+                  path:
+                    type: ReplacePrefixMatch
+                    replacePrefixMatch: /
+            backendRefs:
+              - identifier: server
+                port: *port
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /
+            backendRefs:
+              - identifier: web
+                port: *webport
