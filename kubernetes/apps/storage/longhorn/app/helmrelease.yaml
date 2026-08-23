@@ -16,6 +16,19 @@ spec:
       replicaCount: 2
       storageReservedPercentageForDefaultDisk: 10
       storageMinimalAvailablePercentage: 10
+      # Longhorn schedules on a replica's *nominal* size, never on the bytes it
+      # actually holds, and the claims here are declared far larger than they
+      # will ever be: 473G nominal against 112G real, a factor of 4.2. At the
+      # default 100% that arithmetic wedged twenty-hp01 -- 413G scheduled of the
+      # 417G it is allowed to schedule, 4G left, while 284G of the disk sat
+      # empty and unusable.
+      #
+      # 200% is a scheduling cap, not a reservation: it lets Longhorn place
+      # replicas whose declared sizes exceed the disk, betting they stay as
+      # sparse as they have been. storageMinimalAvailablePercentage above is the
+      # backstop that makes the bet safe -- it stops writes with 10% of the disk
+      # still free regardless of what was promised at schedule time.
+      storageOverProvisioningPercentage: 200
       upgradeChecker: false
       # Longhorn puts a PodDisruptionBudget on each instance-manager with
       # minAvailable 1 against a single pod, so allowed=0 and it can never be
