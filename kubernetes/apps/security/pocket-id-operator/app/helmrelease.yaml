@@ -23,6 +23,17 @@ spec:
         spec:
           appUrl: https://id.${SECRET_DOMAIN}
 
+          # spec.image is a CRD *schema default*: the API server stamps it into
+          # the stored object on first write and never revisits it. This instance
+          # was created under operator 0.11.1 and stayed pinned to pocket-id
+          # 2.11.0 through two operator bumps, because a field that is already
+          # set is not re-defaulted when the CRD's default changes. Operator
+          # 0.14.0 then added a hard floor of pocket-id v2.14.0 and halts the
+          # process below it, so the app has to be moved first and explicitly.
+          # Pinning it here also lets Renovate's kubernetes manager track
+          # pocket-id directly instead of inheriting the operator's default.
+          image: ghcr.io/pocket-id/pocket-id:v2.14.0-distroless
+
           encryptionKey:
             valueFrom:
               secretKeyRef:
