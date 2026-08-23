@@ -99,6 +99,26 @@ spec:
         type: statefulset
         statefulset:
           podManagementPolicy: OrderedReady
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            # The mongo image ships no USER: it starts as root, chowns /data/db
+            # and drops to uid 999 itself. Pinning 999 here skips that branch
+            # and fsGroup is what makes the volume writable instead -- which
+            # also keeps the VolSync mover (VOLSYNC_UID/GID 999) able to read
+            # what mongod writes with umask 0077.
+            #
+            # This belongs to mongodb alone, not defaultPodOptions. Applied
+            # pod-wide it also hit the client, whose entrypoint copies a
+            # generated variables.js over one the image already ships:
+            #   cp: can't create '/app/apps/client/build/variables.js': File exists
+            # The upstream cp has no -f, and a non-root user cannot truncate a
+            # root-owned file in a root-owned directory. Crashloop on every
+            # start.
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            fsGroupChangePolicy: OnRootMismatch
         containers:
           app:
             image:
@@ -129,18 +149,11 @@ spec:
               # database off the same footing as the apps around it.
               limits:
                 memory: 1Gi
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        # The mongo image ships no USER: it starts as root, chowns /data/db and
-        # drops to uid 999 itself. Pinning 999 here skips that branch entirely
-        # and fsGroup is what makes the volume writable instead -- which also
-        # keeps the VolSync mover (VOLSYNC_UID/GID 999) able to read what mongod
-        # writes with umask 0077.
-        runAsUser: 999
-        runAsGroup: 999
-        fsGroup: 999
-        fsGroupChangePolicy: OnRootMismatch
+    # No pod-wide securityContext on purpose. Both application images start as
+    # root and write into their own image layer before serving -- the client
+    # rewrites its bundled variables.js at every start. Each is left to pick its
+    # own user; only mongodb pins one, above. The container securityContext
+    # still drops every capability and forbids privilege escalation.
     persistence:
       data:
         existingClaim: your-spotify-mongodb
