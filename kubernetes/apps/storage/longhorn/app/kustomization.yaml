@@ -5,6 +5,7 @@ resources:
   - ./namespace.yaml
   - ./helmrelease.yaml
   - ./recurringjob.yaml
+  - ./recurringjob-snapshot-cleanup.yaml
   - ./helmrepository.yaml
   - ./httproute.yaml
   - ./dnsendpoint.yaml
