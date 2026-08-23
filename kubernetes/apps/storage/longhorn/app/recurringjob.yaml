@@ -1,0 +1,33 @@
+---
+# Longhorn replicas are sparse files on each node's single OS disk -- there is no
+# separate data disk, so /var/lib/longhorn shares its free space with the Talos
+# EPHEMERAL partition and the container image store. Blocks a guest filesystem
+# frees are never returned on their own: the replica file keeps them, and it only
+# ever grows. pvc-a716f055 was already 21.6GiB of actual size inside a 20Gi
+# volume before this existed.
+#
+# fstrim is issued by longhorn-manager against the mounted filesystem, so no
+# volume needs the `discard` mount option and nothing about the workloads
+# changes. Every volume here is RWO ext4, which supports it; detached volumes
+# have no mounted filesystem and are skipped rather than attached.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: filesystem-trim
+spec:
+  # Sunday 06:00 UTC. CNPG's scheduled backups run at 02:00 and VolSync's at
+  # 03:00, and Immich's 62GiB source can still be running well after that, so
+  # this sits clear of both windows.
+  cron: "0 6 * * 0"
+  task: filesystem-trim
+  # A volume with no recurring-job label of its own belongs to `default`, so this
+  # covers every existing volume and every one created later without touching a
+  # single PVC.
+  groups:
+    - default
+  # One volume at a time. Trim is short but it is an unmap storm across both
+  # replicas of a volume, and all three nodes are low-power boxes whose Longhorn
+  # data lives on the same disk as the OS. Nothing here needs it to finish fast.
+  concurrency: 1
+  # Snapshot/backup retention only; a trim produces nothing to retain.
+  retain: 0
