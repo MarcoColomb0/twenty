@@ -1,0 +1,31 @@
+---
+# Nothing here takes Longhorn snapshots on purpose -- backups are VolSync/restic
+# to S3. Longhorn still creates its own during replica rebuilds, and a node
+# reboot makes one per volume in a burst: 27 appeared inside eighteen minutes on
+# 2026-08-21.
+#
+# Those do not accumulate forever on their own, but nothing prunes a chain that
+# does build up either, and a long chain is what stops `filesystem-trim` from
+# reaching the blocks underneath it. This is the standing guard for that.
+#
+# Deliberately `snapshot-cleanup` and not `snapshot-delete`: cleanup purges
+# removable and system-generated snapshots only, while snapshot-delete trims a
+# chain down to `retain` regardless of who made it. VolSync's CSI snapshots come
+# back `userCreated: true`, so snapshot-delete could take one out from under a
+# running ReplicationSource. `retain` is ignored for this task.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-cleanup
+spec:
+  # Daily 05:00 UTC: after VolSync's 03:00 window, an hour ahead of the Sunday
+  # 06:00 trim so a chain is already collapsed by the time trim walks it.
+  cron: "0 5 * * *"
+  task: snapshot-cleanup
+  # Same `default` group as the trim job -- a volume carrying no recurring-job
+  # label of its own is in it, so this needs no PVC changes and picks up new
+  # volumes automatically.
+  groups:
+    - default
+  concurrency: 1
+  retain: 0
