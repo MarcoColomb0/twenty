@@ -8,7 +8,7 @@ spec:
     # Exactly one of these exists per cluster; editing the version is what
     # triggers an upgrade. No reboot involved, unlike TalosUpgrade.
     # renovate: datasource=docker depName=ghcr.io/siderolabs/kubelet
-    version: v1.36.4
+    version: v1.37.0
   healthChecks:
     - apiVersion: v1
       kind: Node
