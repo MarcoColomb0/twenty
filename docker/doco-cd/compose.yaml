@@ -4,7 +4,7 @@
 # then deployed from git.
 services:
   doco-cd:
-    image: ghcr.io/kimdre/doco-cd:0.110.1
+    image: ghcr.io/kimdre/doco-cd:0.114.0
     restart: unless-stopped
     volumes:
       # Needed to drive compose on the host.
