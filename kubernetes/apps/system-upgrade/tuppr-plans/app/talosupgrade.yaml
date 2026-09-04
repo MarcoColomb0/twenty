@@ -12,7 +12,7 @@ spec:
     # tuppr upgrades to exactly this version and does NOT enforce Talos's
     # supported upgrade path -- stepping through minor releases is on us.
     # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
-    version: v1.13.9
+    version: v1.13.10
   # Force delete rather than evict. Longhorn keeps a PodDisruptionBudget on each
   # instance-manager at allowed=0 for as long as any volume is attached to that
   # node, and those volumes only detach once their pods are gone -- which the
