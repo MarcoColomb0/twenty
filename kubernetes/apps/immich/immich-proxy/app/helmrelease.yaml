@@ -16,7 +16,7 @@ spec:
           app:
             image:
               repository: docker.io/alangrainger/immich-public-proxy
-              tag: "3.2.1"
+              tag: "3.3.1"
             env:
               # Reaches Immich over the cluster network, so Immich itself needs
               # no external route. This proxy serves /share links and nothing
