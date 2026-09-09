@@ -9,7 +9,7 @@ spec:
   # Immich needs VectorChord for smart search and face embeddings; the stock
   # CloudNativePG image does not ship it. Postgres 18 here matches the other
   # clusters, which run 18.4.
-  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.0-0.5.3
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.6-1.1.1
   storage:
     size: 20Gi
     storageClass: longhorn
