@@ -35,6 +35,8 @@
   color: "027fa0"
 - name: renovate/docker-compose
   color: "027fa0"
+- name: renovate/talos
+  color: "027fa0"
 # Semantic Types
 - name: type/digest
   color: "ffeC19"

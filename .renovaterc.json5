@@ -8,29 +8,144 @@
   schedule: [
     "every weekend"
   ],
+  // Talos 1.14 moved installer image production to the Image Factory.
+  // ghcr.io/siderolabs/installer stops at v1.13.10 and gets no new tags, so the docker
+  // datasource sees nothing newer and no PR is ever raised. Pointing it at the factory
+  // instead does not work either: factory.talos.dev serves images but implements no
+  // /v2/.../tags/list, so there is nothing for the docker datasource to enumerate.
+  //
+  // The factory publishes the versions it will actually build at /versions -- a bare JSON
+  // array of tags -- which is the authoritative list for both talos/talenv.yaml and the
+  // tuppr TalosUpgrade, since both end up requesting an image from this factory.
+  customDatasources: {
+    "talos-factory": {
+      defaultRegistryUrlTemplate: "https://factory.talos.dev/versions",
+      format: "json",
+      transformTemplates: [
+        '{"releases": [$.{"version": $}], "sourceUrl": "https://github.com/siderolabs/talos"}',
+      ],
+    },
+    // grafana.com has no registry Renovate understands either. Its dashboard API
+    // returns the current `revision` for a dashboard id, which is the only number
+    // that ever moves -- so a dashboard is modelled as a package whose version is
+    // its revision.
+    "grafana-dashboards": {
+      defaultRegistryUrlTemplate: "https://grafana.com/api/dashboards/{{packageName}}",
+      format: "json",
+      transformTemplates: [
+        '{"releases": [{"version": $string(revision)}], "homepage": "https://grafana.com/grafana/dashboards/" & $string(id)}',
+      ],
+    },
+  },
+  // Three things in this repository pin a version that no built-in manager can
+  // see. Each was drifting silently before these existed.
+  customManagers: [
+    {
+      // CNPG puts the image on `spec.imageName`, which is a CRD field and not a
+      // pod spec, so neither the kubernetes nor the flux manager looks at it.
+      // Both VectorChord clusters sat on an 18.0 image for months because of it.
+      customType: "regex",
+      description: "CloudNativePG cluster images",
+      managerFilePatterns: [
+        "/^kubernetes/.+/cluster\\.ya?ml$/"
+      ],
+      matchStrings: [
+        "imageName: (?<depName>\\S+):(?<currentValue>\\S+)"
+      ],
+      datasourceTemplate: "docker",
+    },
+    {
+      // Dashboards the chart downloads from grafana.com at pod start. depName
+      // comes from the trailing comment that is already on every gnetId line.
+      customType: "regex",
+      description: "Grafana dashboards pinned by gnetId and revision",
+      managerFilePatterns: [
+        "/^kubernetes/.+\\.ya?ml$/"
+      ],
+      matchStrings: [
+        "gnetId: (?<packageName>\\d+) # (?<depName>.+)\n(?<indentation>\\s+)revision: (?<currentValue>\\d+)"
+      ],
+      autoReplaceStringTemplate: "gnetId: {{{packageName}}} # {{{depName}}}\n{{{indentation}}}revision: {{{newValue}}}",
+      datasourceTemplate: "custom.grafana-dashboards",
+      versioningTemplate: "regex:^(?<major>\\d+)$",
+    },
+    {
+      // Dashboards fetched straight from a git tag. Pinning the tag stops them
+      // drifting, which was the point, but nothing was moving the pin either:
+      // the envoy dashboards trailed the gateway chart by a minor release and
+      // the flux ones by three. The trailing path is captured so that the two
+      // flux URLs and the three envoy URLs each have a distinct replace string.
+      customType: "regex",
+      description: "Grafana dashboards fetched from a tagged GitHub source",
+      managerFilePatterns: [
+        "/^kubernetes/.+\\.ya?ml$/"
+      ],
+      matchStrings: [
+        "https://raw\\.githubusercontent\\.com/(?<depName>[^/]+/[^/]+)/(?<currentValue>v\\d[^/]*)/(?<path>\\S+)"
+      ],
+      autoReplaceStringTemplate: "https://raw.githubusercontent.com/{{{depName}}}/{{{newValue}}}/{{{path}}}",
+      datasourceTemplate: "github-releases",
+    },
+  ],
   lockFileMaintenance: {
     enabled: true,
     schedule: [
-      "every weekend"
+      "before 3am on the first day of the month"
     ],
+    commitMessageExtra: "({{manager}})",
+    additionalBranchPrefix: "{{manager}}-",
   },
   packageRules: [
     {
-      description: "Talos Group",
-      groupName: "talos",
+      description: "GitHub Actions Group",
+      matchManagers: [
+        "github-actions"
+      ],
+      groupName: "github-actions",
+      minimumReleaseAge: "3 days",
+    },
+    {
+      description: "Mise Tools Group",
+      matchManagers: [
+        "mise"
+      ],
+      groupName: "mise tools",
+      minimumReleaseAge: "3 days",
+    },
+    {
+      // talenv.yaml and the tuppr TalosUpgrade carry the same annotation, so both files
+      // move in one branch. semver rather than the custom datasource default so the
+      // factory's -alpha entries are treated as unstable and skipped.
+      description: "Talos",
+      matchDatasources: [
+        "custom.talos-factory"
+      ],
       matchPackageNames: [
         "siderolabs/talos"
       ],
-      group: {
-        commitMessageTopic: "{{{groupName}}} group",
-      },
-      minimumGroupSize: 2,
+      versioning: "semver",
+      groupName: "talos",
+      semanticCommitScope: "talos",
+      commitMessageTopic: "Talos",
+      addLabels: [
+        "renovate/talos"
+      ],
+      // A patch is a same-minor bugfix and can go in on its own; a minor is a
+      // release to read the notes for. Separating them stops a 1.14.1 waiting
+      // behind an unread 1.15.0.
+      separateMinorPatch: true,
+      prBodyNotes: [
+        "⚠️ Merging this reboots all three nodes, one at a time, as soon as Flux applies the `TalosUpgrade`. tuppr goes to exactly this version and does **not** enforce Talos's supported upgrade path -- check that this is a single minor step from the running version.",
+      ],
     },
     {
       description: "Flux Operator Group",
       groupName: "flux-operator",
+      // github-releases so the two flux dashboards pinned to a tag ride along
+      // with the operator release they came from.
       matchDatasources: [
-        "docker"
+        "docker",
+        "github-releases"
       ],
       matchPackageNames: [
         "/flux-operator/",
@@ -42,45 +157,129 @@
       minimumGroupSize: 2,
     },
     {
-      description: "Auto-merge Mise Tools",
+      // The kubernetes manager reports every `apiVersion` as a dependency.
+      // Nothing here tracks cluster API deprecations that way, so they are only
+      // noise in the extraction.
+      description: "Ignore Kubernetes API versions",
       matchManagers: [
-        "mise"
+        "kubernetes"
       ],
-      automerge: true,
-      automergeType: "branch",
-      matchUpdateTypes: [
-        "minor",
-        "patch"
+      matchDatasources: [
+        "kubernetes-api"
       ],
-      ignoreTests: true,
+      enabled: false,
     },
     {
-      description: "Auto-merge GitHub Actions",
-      matchManagers: [
-        "github-actions"
+      // Both charts are released together and the GPU plugin's DaemonSet is
+      // version-locked to the operator, so shipping them as two PRs means two
+      // PRs that are only correct when merged together.
+      description: "Intel Device Plugins Group",
+      groupName: "intel-device-plugins",
+      matchDatasources: [
+        "docker"
       ],
-      automerge: true,
-      automergeType: "branch",
-      matchUpdateTypes: [
-        "minor",
-        "patch",
-        "digest"
+      matchPackageNames: [
+        "/intel-device-plugins/"
       ],
-      minimumReleaseAge: "3 days",
-      ignoreTests: true,
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
     },
     {
-      description: "Auto-merge Renovate Presents",
-      matchManagers: [
-        "renovate-config"
+      // Every OCIRepository here is a Helm chart, but they resolve through the
+      // docker datasource, so without this a chart bump reads "update image
+      // ghcr.io/home-operations/charts/kromgo" and is labelled a container.
+      description: "OCIRepository charts are charts, not images",
+      matchDatasources: [
+        "docker"
       ],
-      matchUpdateTypes: [
-        "minor",
-        "patch"
+      matchFileNames: [
+        "**/ocirepository.yaml"
       ],
-      automerge: true,
-      automergeType: "branch",
-      ignoreTests: true,
+      semanticCommitScope: "helm",
+      commitMessageTopic: "chart {{depName}}",
+      addLabels: [
+        "renovate/helm"
+      ],
+    },
+    {
+      // The tag is <postgres major>.<postgres minor>-<vectorchord>, which no
+      // built-in versioning models: `docker` reads everything after the dash as
+      // a compatibility suffix and would pin it forever, and `redhat` rejects
+      // the value outright. `loose` compares the numbers left to right, which
+      // is the right order here. allowedVersions keeps the floating short tags
+      // (`18`, `18.4`) out of the candidate list -- taking one would silently
+      // drop the extension version from the pin.
+      description: "CloudNativePG images",
+      matchDatasources: [
+        "docker"
+      ],
+      matchPackageNames: [
+        "ghcr.io/tensorchord/cloudnative-vectorchord"
+      ],
+      versioning: "loose",
+      allowedVersions: "/^\\d+\\.\\d+-\\d+\\.\\d+\\.\\d+$/",
+      prBodyNotes: [
+        "⚠️ A VectorChord bump needs `ALTER EXTENSION vchord UPDATE` after the rolling restart; a PostgreSQL major needs a real CNPG major upgrade, not an image swap.",
+      ],
+    },
+    {
+      description: "Grafana dashboards",
+      matchDatasources: [
+        "custom.grafana-dashboards"
+      ],
+      semanticCommitType: "chore",
+      semanticCommitScope: "grafana-dashboards",
+      commitMessageTopic: "dashboard {{depName}}",
+      addLabels: [
+        "renovate/grafana-dashboard"
+      ],
+    },
+    {
+      // The tagged-source dashboards, which are a GitHub release rather than a
+      // grafana.com revision. They keep the label but not a topic of their own:
+      // the rules below fold each one into the PR for the app it describes, so
+      // a dashboard and the app it charts can no longer drift apart.
+      description: "Grafana dashboards from a tagged GitHub source",
+      matchDatasources: [
+        "github-releases"
+      ],
+      matchFileNames: [
+        "**/kube-prometheus-stack/**"
+      ],
+      addLabels: [
+        "renovate/grafana-dashboard"
+      ],
+    },
+    {
+      description: "Blocky, with its dashboard",
+      groupName: "blocky",
+      matchDatasources: [
+        "docker",
+        "github-releases"
+      ],
+      matchPackageNames: [
+        "ghcr.io/0xerr0r/blocky",
+        "0xERR0R/blocky"
+      ],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+    },
+    {
+      description: "Envoy Gateway, with its dashboards",
+      groupName: "envoy-gateway",
+      matchDatasources: [
+        "docker",
+        "github-releases"
+      ],
+      matchPackageNames: [
+        "mirror.gcr.io/envoyproxy/gateway-helm",
+        "envoyproxy/gateway"
+      ],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
     },
     {
       matchUpdateTypes: [
@@ -115,19 +314,18 @@
       ],
     },
     {
+      // Everything but the chart OCIRepositories, which are relabelled above.
       matchDatasources: [
         "docker"
+      ],
+      matchFileNames: [
+        "!**/ocirepository.yaml"
       ],
       addLabels: [
         "renovate/container"
       ],
     },
     {
-      // Compose stacks under ./docker are deployed by doco-cd to the Oracle
-      // host, not by Flux to the cluster. Renovate already finds them -- the
-      // docker-compose manager's default pattern matches compose.yaml at any
-      // depth -- so this only labels them, because merging one of these PRs
-      // changes a different machine than every other container PR here.
       description: "doco-cd managed compose stacks",
       matchManagers: [
         "docker-compose"
@@ -135,9 +333,6 @@
       addLabels: [
         "renovate/docker-compose"
       ],
-      // doco-cd polls every 5 minutes and redeploys on merge, unattended and
-      // with nothing watching the result. A short soak means a tag that gets
-      // pulled immediately after release has been out a few days first.
       minimumReleaseAge: "3 days",
     },
     {
