@@ -9,7 +9,7 @@ spec:
   # Upstream runs AFFiNE on pgvector/pgvector, so the stock CloudNativePG image
   # is not enough. This is the same image Immich's cluster uses -- VectorChord
   # ships pgvector alongside it, so no second variant is needed.
-  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.0-0.5.3
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.6-1.1.1
   storage:
     size: 10Gi
     storageClass: longhorn
