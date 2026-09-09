@@ -123,7 +123,7 @@ spec:
           app:
             image:
               repository: docker.io/library/mongo
-              tag: "8.3.8"
+              tag: "8.3.9"
             env:
               TZ: *tz
             probes:
