@@ -6,12 +6,12 @@ metadata:
 spec:
   talos:
     # Kept in step with talos/talenv.yaml by the same Renovate annotation, so a
-    # merged installer bump is what actually starts a rollout. Set to the running
+    # merged version bump is what actually starts a rollout. Set to the running
     # version on first deploy, which makes applying this a no-op.
     #
     # tuppr upgrades to exactly this version and does NOT enforce Talos's
     # supported upgrade path -- stepping through minor releases is on us.
-    # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
+    # renovate: datasource=custom.talos-factory depName=siderolabs/talos
     version: v1.13.10
   # Force delete rather than evict. Longhorn keeps a PodDisruptionBudget on each
   # instance-manager at allowed=0 for as long as any volume is attached to that
