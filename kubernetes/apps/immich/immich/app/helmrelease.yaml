@@ -18,7 +18,7 @@ spec:
           app:
             image:
               repository: ghcr.io/immich-app/immich-server
-              tag: v3.1.0
+              tag: v3.2.0
             env:
               IMMICH_PORT: &port 2283
               IMMICH_MEDIA_LOCATION: /data
@@ -104,7 +104,7 @@ spec:
           app:
             image:
               repository: ghcr.io/immich-app/immich-machine-learning
-              tag: v3.1.0-openvino
+              tag: v3.2.0-openvino
             env:
               MACHINE_LEARNING_CACHE_FOLDER: /cache
               # The upstream image runs as root, where HOME=/ is writable. This
