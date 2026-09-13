@@ -86,6 +86,22 @@
       autoReplaceStringTemplate: "https://raw.githubusercontent.com/{{{depName}}}/{{{newValue}}}/{{{path}}}",
       datasourceTemplate: "github-releases",
     },
+    {
+      // Trilium drives the Claude Code CLI as a subprocess and an init container
+      // npm-installs it at pod start. No manager looks inside a shell command in
+      // a HelmRelease value, so the pin would sit still while upstream moves --
+      // and Trilium's own docs call out version skew between the two as the
+      // thing that breaks this provider.
+      customType: "regex",
+      description: "npm packages installed by an init container",
+      managerFilePatterns: [
+        "/^kubernetes/.+\\.ya?ml$/"
+      ],
+      matchStrings: [
+        "npm install -g .*?(?<depName>@[\\w.-]+/[\\w.-]+)@(?<currentValue>[\\w.+-]+)"
+      ],
+      datasourceTemplate: "npm",
+    },
   ],
   lockFileMaintenance: {
     enabled: true,
