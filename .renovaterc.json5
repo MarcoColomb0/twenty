@@ -73,17 +73,36 @@
       // Dashboards fetched straight from a git tag. Pinning the tag stops them
       // drifting, which was the point, but nothing was moving the pin either:
       // the envoy dashboards trailed the gateway chart by a minor release and
-      // the flux ones by three. The trailing path is captured so that the two
-      // flux URLs and the three envoy URLs each have a distinct replace string.
+      // the flux ones by three.
+      //
+      // The trailing path is matched but NOT captured, and there is deliberately
+      // no autoReplaceStringTemplate. Both of those are the same bug:
+      //
+      //   - Only the fields in Renovate's `validMatchFields` (depName,
+      //     packageName, currentValue, currentDigest, datasource, versioning,
+      //     extractVersion, registryUrl, depType, indentation) are copied onto
+      //     the dependency. A group named anything else -- `path` -- is matched
+      //     and then dropped.
+      //   - doAutoReplace compiles autoReplaceStringTemplate against that
+      //     dependency, so `{{{path}}}` rendered empty and rewrote
+      //     .../gateway/v1.8.2/charts/.../envoy-gateway-global.json down to
+      //     .../gateway/v1.9.1/ -- which this regex can no longer match, so
+      //     Renovate failed to confirm the update and errored the branch with
+      //     "Error updating branch: update failure". Three groups sat broken
+      //     that way: envoy-gateway, major-flux-operator, major-blocky.
+      //
+      // With no template, Renovate replaces currentValue inside the matched
+      // string and the path survives untouched. Matching the path still matters
+      // -- it is what makes each of the three envoy URLs a distinct
+      // replaceString rather than three identical ones.
       customType: "regex",
       description: "Grafana dashboards fetched from a tagged GitHub source",
       managerFilePatterns: [
         "/^kubernetes/.+\\.ya?ml$/"
       ],
       matchStrings: [
-        "https://raw\\.githubusercontent\\.com/(?<depName>[^/]+/[^/]+)/(?<currentValue>v\\d[^/]*)/(?<path>\\S+)"
+        "https://raw\\.githubusercontent\\.com/(?<depName>[^/]+/[^/]+)/(?<currentValue>v\\d[^/]*)/\\S+"
       ],
-      autoReplaceStringTemplate: "https://raw.githubusercontent.com/{{{depName}}}/{{{newValue}}}/{{{path}}}",
       datasourceTemplate: "github-releases",
     },
     {
