@@ -254,7 +254,7 @@ spec:
             revision: 1
             datasource: Prometheus
           blocky:
-            url: https://raw.githubusercontent.com/0xERR0R/blocky/v0.33.0/docs/blocky-grafana.json
+            url: https://raw.githubusercontent.com/0xERR0R/blocky/v0.35.0/docs/blocky-grafana.json
             datasource: Prometheus
           envoy-gateway:
             url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
