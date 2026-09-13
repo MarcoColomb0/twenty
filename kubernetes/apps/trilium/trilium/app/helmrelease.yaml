@@ -16,6 +16,42 @@ spec:
         strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
+        initContainers:
+          # Trilium's Claude subscription provider runs in "bring-your-own-binary"
+          # mode: the SDK's own ~250 MB native binary is stripped at Trilium's
+          # install time, and claude_binary.ts resolves the CLI from
+          # TRILIUM_CLAUDE_CODE_PATH instead. The image ships no such binary, so
+          # it is installed here into a shared emptyDir on every pod start.
+          #
+          # Same image as the app rather than a node image of its own: it already
+          # carries the matching node and npm, and spegel has it cached on the
+          # node. ~208 MB and ~20 s, and the platform binary arrives as a normal
+          # optionalDependency (@anthropic-ai/claude-code-linux-x64), so the
+          # package's postinstall script never has to run.
+          install-claude:
+            image:
+              repository: docker.io/triliumnext/trilium
+              tag: v0.105.0
+            command:
+              - "sh"
+              - "-c"
+              - "exec npm install -g --prefix /claude @anthropic-ai/claude-code@2.1.270"
+            env:
+              # npm writes a cache and a logs directory under $HOME, which is
+              # read-only here like every other path outside the mounts.
+              HOME: /tmp
+              npm_config_cache: /tmp/npm-cache
+              npm_config_update_notifier: "false"
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
         containers:
           app:
             image:
@@ -58,6 +94,39 @@ spec:
               # against the note database. Neither is needed to write notes.
               TRILIUM_SECURITY_BACKEND_SCRIPTING_ENABLED: "false"
               TRILIUM_SECURITY_SQL_CONSOLE_ENABLED: "false"
+
+              # -- Claude subscription provider --------------------------------
+              #
+              # Where the init container above put the CLI. Without this,
+              # claude_binary.ts falls back to searching PATH and fails with
+              # "Claude Code CLI not found".
+              TRILIUM_CLAUDE_CODE_PATH: /claude/bin/claude
+              # Authentication is the long-lived subscription token minted by
+              # `claude setup-token`, not an API key and not a metered
+              # Anthropic API credit. The alternative upstream documents is
+              # running `claude` and `/login` interactively on the server, which
+              # would mean exec-ing into the pod and keeping the resulting
+              # credential on a volume; a token in SOPS is the same secret with
+              # none of the state.
+              #
+              # The Secret ships alongside this release so the reference always
+              # resolves -- app-template's schema rejects `optional` on a
+              # secretKeyRef, and a missing Secret would otherwise hold the pod
+              # in CreateContainerConfigError and take the notes down with it.
+              # Until a real token is in there the AI features 401 and nothing
+              # else is affected.
+              CLAUDE_CODE_OAUTH_TOKEN:
+                valueFrom:
+                  secretKeyRef:
+                    name: trilium-claude
+                    key: token
+              # The CLI writes sessions, projects and a .claude.json into this
+              # directory on every invocation, and $HOME is read-only. An
+              # emptyDir on purpose rather than a path on the data volume: with
+              # the token supplied through the environment there is nothing here
+              # worth keeping across restarts, and nothing credential-shaped
+              # lands in the VolSync backup.
+              CLAUDE_CONFIG_DIR: /claude-config
 
               # -- SSO --------------------------------------------------------
               #
@@ -124,9 +193,12 @@ spec:
             resources:
               requests:
                 cpu: 25m
-                memory: 256Mi
+                memory: 384Mi
+              # Raised from 1Gi: a chat turn spawns the Claude Code CLI as a
+              # child of this container, so the agent's memory counts against
+              # the same limit as the note server.
               limits:
-                memory: 1Gi
+                memory: 2Gi
     defaultPodOptions:
       securityContext:
         runAsNonRoot: true
@@ -147,6 +219,15 @@ spec:
         type: emptyDir
         globalMounts:
           - path: /tmp
+      # Written by the init container, read by the app container.
+      claude:
+        type: emptyDir
+        globalMounts:
+          - path: /claude
+      claude-config:
+        type: emptyDir
+        globalMounts:
+          - path: /claude-config
     service:
       app:
         ports:
