@@ -1,0 +1,49 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: pvc-autoresizer
+spec:
+  chart:
+    spec:
+      chart: pvc-autoresizer
+      version: 0.20.0
+      sourceRef:
+        kind: HelmRepository
+        name: pvc-autoresizer
+  interval: 1h
+  values:
+    controller:
+      # Two, deliberately. The chart's PDB is minAvailable: 1 against this
+      # selector, so a single replica would pin disruptionsAllowed at 0 and
+      # block every node drain -- the same shape as the crowdsec-lapi PDB that
+      # stalled drains for days.
+      replicas: 2
+      args:
+        prometheusURL: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+        # The chart default is 10s. Nothing here fills fast enough to need
+        # that, and each pass is a Prometheus range query per watched PVC.
+        interval: 1m
+        additionalArgs:
+          # Drops the requirement for a resize.topolvm.io/enabled annotation on
+          # the StorageClass. The longhorn class is rendered by the Longhorn
+          # chart and carries longhorn.io/last-applied-configmap, so annotating
+          # it from here would fight that controller. It costs nothing: the
+          # per-PVC storage_limit annotation is still required for any volume
+          # to be touched at all, so opt-in is unchanged -- just expressed in
+          # one place instead of two.
+          - --no-annotation-check
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 128Mi
+    webhook:
+      pvcMutatingWebhook:
+        # Only serves the "initial resize by group" feature, which rewrites a
+        # PVC's requested size at creation to match the largest in its label
+        # group. Nothing here uses it, and leaving it on would pull in a
+        # serving certificate the chart cannot issue on its own.
+        enabled: false
+    podMonitor:
+      enabled: true

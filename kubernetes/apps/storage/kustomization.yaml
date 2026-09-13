@@ -9,5 +9,6 @@ components:
 resources:
   - ./namespace.yaml
   - ./longhorn/ks.yaml
+  - ./pvc-autoresizer/ks.yaml
   - ./snapshot-controller/ks.yaml
   - ./volsync/ks.yaml
