@@ -1,0 +1,24 @@
+---
+# /etapi/metrics is part of the ETAPI surface, so it needs an ETAPI token like
+# any other ETAPI call. parseAuthToken() accepts a bare token, "Bearer <token>"
+# or Basic auth with the username "etapi", which is why the stock Bearer form
+# below works unmodified.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: trilium
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trilium
+  endpoints:
+    - port: http
+      path: /etapi/metrics
+      # The values are gauges over the whole note tree, not counters, and they
+      # only move when notes do. A minute is already finer than the data.
+      interval: 1m
+      authorization:
+        type: Bearer
+        credentials:
+          name: trilium-etapi
+          key: token

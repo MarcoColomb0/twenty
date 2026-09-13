@@ -1,0 +1,33 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: trilium
+spec:
+  # express-openid-connect owns these paths inside Trilium and they are not
+  # configurable: callback is /callback, and the post-logout redirect is /login.
+  callbackUrls:
+    - https://notes.${SECRET_DOMAIN}/callback
+  logoutCallbackUrls:
+    - https://notes.${SECRET_DOMAIN}/login
+  pkceEnabled: true
+  skipConsent: true
+  # Trilium binds exactly one provider subject on enrollment and rejects every
+  # other identity afterwards with "wrong_account", so this is not the only
+  # gate. It matters for the window before enrollment: afterCallback refuses to
+  # bind an identity unless the request already carries a logged-in session, and
+  # this group means a stranger never reaches that code path at all.
+  allowedUserGroups:
+    - name: trilium-users
+  secret:
+    name: trilium-oidc
+    keys:
+      clientID: client_id
+      clientSecret: client_secret
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDUserGroup
+metadata:
+  name: trilium-users
+spec:
+  friendlyName: Trilium Users
