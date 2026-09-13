@@ -1,0 +1,87 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: konflate
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: konflate
+  interval: 1h
+  values:
+    config:
+      repo: github://MarcoColomb0/twenty
+      # Empty means the repository root, which is what Flux's GitRepository
+      # serves and what every Kustomization spec.path resolves against.
+      clusterPath: ""
+
+      # Both of these are rendered through `tpl`, so they track the cluster this
+      # release installs into rather than a number that silently goes stale.
+      # They matter because konflate templates offline with no API server:
+      # app-template renders HTTPRoute as v1alpha2 when Helm has no cluster
+      # capabilities and v1 when it does, so without the second line every
+      # HTTPRoute would show up as a spurious apiVersion change in the diff.
+      kubeVersion: "{{ .Capabilities.KubeVersion.Version }}"
+      helmApiVersions: "{{ join \",\" .Capabilities.APIVersions }}"
+
+      # -- Write-back ---------------------------------------------------------
+      #
+      # The credential itself is a GitHub App, and rides in through the Secret
+      # below rather than config.appClientId -- that value is a plain scalar the
+      # chart writes into the rendered Deployment, and this repository is
+      # public. envFrom injects every key in the Secret as an environment
+      # variable, so KONFLATE_APP_CLIENT_ID works there just as well.
+      #
+      # An App rather than a PAT: konflate mints short-lived installation tokens
+      # from the private key, so nothing standing with write access to the
+      # repository sits in the cluster.
+      prComments: true
+      statusChecks: true
+      # Only used to build the link in the comment it posts. The UI is on the
+      # internal gateway, so that link resolves over the LAN or Tailscale and
+      # nowhere else -- deliberate, since the UI has no authentication.
+      publicUrl: https://konflate.${SECRET_DOMAIN}
+
+      # The webhook makes this prompt; the interval is the backstop for a
+      # delivery that never arrives.
+      refreshInterval: 30m
+    secret:
+      # Hand-written and SOPS-encrypted rather than chart-managed: it carries
+      # the App client id as well, which the chart has no inline value for.
+      existingSecret: &secret konflate-secret
+    persistence:
+      enabled: true
+      storageClass: longhorn
+      # Holds flate's source cache (helm charts, OCI layers, git mirrors) plus
+      # konflate's own rendered diffs and the merged-PR shelf. Losing it costs a
+      # full re-render of every open PR, not data.
+      size: 10Gi
+      annotations:
+        resize.topolvm.io/storage_limit: 30Gi
+        resize.topolvm.io/threshold: 20%
+        resize.topolvm.io/increase: 20%
+    # The UI, internal only. The public half is a separate HTTPRoute next to
+    # this file that publishes /hooks and nothing else.
+    httpRoute:
+      enabled: true
+      parentRefs:
+        - name: envoy-internal
+          namespace: network
+          sectionName: https
+      hostnames:
+        - "konflate.${SECRET_DOMAIN}"
+    # monitoring.serviceMonitor, not serviceMonitor -- the top-level spelling
+    # renders nothing and Helm does not complain, the same shape as the
+    # Tailscale fullnameOverride trap.
+    monitoring:
+      serviceMonitor:
+        enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      # Rendering the cluster twice per PR. The chart default is 1Gi; the
+      # controller bounds concurrent renders itself (maxDiffConcurrency derives
+      # from the CPU budget) so this is a ceiling, not a target.
+      limits:
+        memory: 1Gi
