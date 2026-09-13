@@ -1,0 +1,16 @@
+---
+# Everything Trilium owns: document.db (SQLite), attachments, session store,
+# config.ini and the hourly/daily backups it writes into backup/ by default.
+# There is no separate database here, so this volume is the whole application
+# state and VolSync is the only copy of it off-cluster.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trilium-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi

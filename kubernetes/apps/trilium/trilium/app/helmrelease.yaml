@@ -1,0 +1,158 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: trilium
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: trilium
+  interval: 1h
+  values:
+    controllers:
+      trilium:
+        # SQLite on a single ReadWriteOnce volume, so two pods must never run at
+        # once -- a rolling update would deadlock on the attach anyway.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: docker.io/triliumnext/trilium
+              tag: v0.105.0
+            # Upstream's entrypoint (start-docker.sh) starts as root purely to
+            # usermod/chown the data directory before dropping to node via su,
+            # and no rootless image is published to Docker Hub. fsGroup below
+            # already makes the volume group-writable, so the container is
+            # started at its final identity instead and the script is skipped.
+            # The consequence to watch: anything upstream later adds to that
+            # script will not run here.
+            command:
+              - "node"
+              - "./main.mjs"
+            env:
+              # Must match the persistence mount below. Also where config.ini is
+              # written on first boot, and where the healthcheck-url file lands.
+              TRILIUM_DATA_DIR: &dataDir /home/node/trilium-data
+              TRILIUM_NETWORK_HOST: 0.0.0.0
+              TRILIUM_NETWORK_PORT: &port 8080
+              # Express otherwise reads the socket peer, which is always the
+              # Envoy pod, so every login attempt shares one address. A CIDR
+              # rather than "true": "true" takes the leftmost X-Forwarded-For
+              # entry, which is whatever the client sent and therefore forgeable
+              # -- the same trap already documented on Vaultwarden's IP_HEADER.
+              TRILIUM_NETWORK_TRUSTEDREVERSEPROXY: "10.42.0.0/16"
+              TRILIUM_GENERAL_NOAUTHENTICATION: "false"
+              # Both default to false; set explicitly because this is published.
+              # Backend scripts run with full server access -- child_process,
+              # filesystem, network -- and the SQL console executes raw SQL
+              # against the note database. Neither is needed to write notes.
+              TRILIUM_SECURITY_BACKEND_SCRIPTING_ENABLED: "false"
+              TRILIUM_SECURITY_SQL_CONSOLE_ENABLED: "false"
+
+              # -- SSO --------------------------------------------------------
+              #
+              # These three variables only *configure* OpenID. They do not turn
+              # it on: isOpenIDConfigured() additionally requires the mfaMethod
+              # option to be 'oauth', which is a setting inside Trilium, and
+              # isOpenIDEnabled() further requires an enrolled subject. So the
+              # first boot still shows the password form -- by design, since
+              # afterCallback refuses to bind an identity unless the request
+              # already carries a logged-in session. A stranger cannot claim the
+              # instance by being first to authenticate.
+              #
+              # After enrollment the login page offers the provider button and
+              # any other identity is rejected as "wrong_account". The password
+              # is not deleted and stays the break-glass path, the same posture
+              # as Vaultwarden's SSO_ONLY=false.
+              TRILIUM_MULTIFACTORAUTHENTICATION_OAUTHBASEURL: https://notes.${SECRET_DOMAIN}
+              # Issuer URL, not the .well-known path.
+              TRILIUM_MULTIFACTORAUTHENTICATION_OAUTHISSUERBASEURL: https://id.${SECRET_DOMAIN}
+              # Default is "Google", which would mislabel the login button.
+              TRILIUM_MULTIFACTORAUTHENTICATION_OAUTHISSUERNAME: Pocket ID
+              TRILIUM_MULTIFACTORAUTHENTICATION_OAUTHCLIENTID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc trilium-oidc
+                    key: client_id
+              TRILIUM_MULTIFACTORAUTHENTICATION_OAUTHCLIENTSECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    # The same endpoint the image's own HEALTHCHECK probes, and
+                    # the one route registered with an empty middleware list, so
+                    # it answers 200 without a session.
+                    path: /api/health-check
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/health-check
+                    port: *port
+                  # First boot creates the schema and copies config-sample.ini
+                  # into the data directory before it binds.
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 30
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 25m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        # node:24 in the base image. Matching it keeps the files the container
+        # writes owned by the identity the image expects.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      data:
+        existingClaim: trilium-data
+        globalMounts:
+          - path: *dataDir
+      # readOnlyRootFilesystem above leaves nothing else writable, and node
+      # falls back to os.tmpdir() for uploads and extraction.
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "notes.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

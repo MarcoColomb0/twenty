@@ -286,6 +286,11 @@ spec:
           crowdsec-lapi:
             url: https://raw.githubusercontent.com/crowdsecurity/grafana-dashboards/0d34f686930aab1f11562bdf664ffad60c567e39/dashboards_v5/LAPI%20Metrics.json
             datasource: Prometheus
+          # Ships in the Trilium repo rather than on grafana.com, so it is
+          # pinned to the same tag as the running image.
+          trilium:
+            url: https://raw.githubusercontent.com/TriliumNext/Trilium/v0.105.0/docs/User%20Guide/User%20Guide/Advanced%20Usage/Metrics/grafana-dashboard.json
+            datasource: Prometheus
       # Pick up the dashboards shipped by other apps, e.g. cilium sets
       # dashboards.enabled and operator.dashboards.enabled in kube-system.
       sidecar:
