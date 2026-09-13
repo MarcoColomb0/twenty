@@ -19,4 +19,6 @@ spec:
     requests:
       cpu: 50m
     limits:
-      memory: 512Mi
+      # One proactor needs 256MiB of maxmemory, which is 80% of the limit, so
+      # 320Mi is the floor. 384Mi keeps a margin over it; observed use is 26Mi.
+      memory: 384Mi
