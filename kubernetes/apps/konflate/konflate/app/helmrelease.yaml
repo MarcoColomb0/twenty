@@ -9,6 +9,11 @@ spec:
     name: konflate
   interval: 1h
   values:
+    # The chart sets no reloader annotation of its own, and the App credential
+    # arrives later by editing the Secret -- without this the pod would keep the
+    # old environment until something else restarted it.
+    deploymentAnnotations:
+      reloader.stakater.com/auto: "true"
     config:
       repo: github://MarcoColomb0/twenty
       # Empty means the repository root, which is what Flux's GitRepository
