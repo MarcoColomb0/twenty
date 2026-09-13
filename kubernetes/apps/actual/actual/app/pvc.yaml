@@ -3,6 +3,10 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: actual-data
+  annotations:
+    resize.topolvm.io/storage_limit: 10Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
 spec:
   accessModes:
     - ReadWriteOnce
