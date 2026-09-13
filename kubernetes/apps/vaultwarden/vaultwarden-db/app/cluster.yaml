@@ -6,6 +6,19 @@ metadata:
   name: postgres-vaultwarden
 spec:
   instances: 2
+  # A database that fills its volume stops accepting writes, which is the
+  # failure pvc-autoresizer exists to prevent -- and unlike the app volumes,
+  # these grow on their own without anyone touching them. Currently 0.72G of
+  # 2Gi per instance.
+  #
+  # inheritedMetadata is the only hook CNPG offers here: it stamps every object
+  # it creates for the Cluster, PVCs included. Services and pods pick the
+  # annotation up too, where it means nothing and costs nothing.
+  inheritedMetadata:
+    annotations:
+      resize.topolvm.io/storage_limit: 10Gi
+      resize.topolvm.io/threshold: 20%
+      resize.topolvm.io/increase: 20%
   storage:
     size: 2Gi
     storageClass: longhorn
