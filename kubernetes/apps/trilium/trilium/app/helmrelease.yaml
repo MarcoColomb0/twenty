@@ -28,9 +28,17 @@ spec:
             # started at its final identity instead and the script is skipped.
             # The consequence to watch: anything upstream later adds to that
             # script will not run here.
+            #
+            # The glob is deliberate. The entry point is main.cjs in v0.105.0
+            # and has already been renamed to main.mjs upstream, so naming
+            # either one pins this to a single release and crashloops on the
+            # Renovate bump that crosses the rename -- which is how it landed
+            # broken the first time. "?" matches the one character that
+            # actually changes, and only ever one of the two files exists.
             command:
-              - "node"
-              - "./main.mjs"
+              - "sh"
+              - "-c"
+              - "exec node ./main.?js"
             env:
               # Must match the persistence mount below. Also where config.ini is
               # written on first boot, and where the healthcheck-url file lands.
