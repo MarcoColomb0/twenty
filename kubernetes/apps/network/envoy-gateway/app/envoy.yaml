@@ -14,11 +14,22 @@ spec:
         replicas: 2
         container:
           imageRepository: mirror.gcr.io/envoyproxy/envoy
+          # Only requests.cpu and limits.memory are set anywhere in this
+          # repository, deliberately: CPU is compressible so a limit only
+          # throttles, memory is not so the limit is the ceiling. The catch is
+          # that Kubernetes fills an absent memory *request* from the limit, so
+          # whatever goes here is reserved on the node whether or not it is
+          # used -- these four pods were holding 4.1Gi to serve 57-86Mi of
+          # traffic, on a cluster where one node sits at 97% of allocatable.
+          #
+          # 256Mi is ~3x the observed peak. Envoy's footprint here scales with
+          # listeners and clusters, not request volume, so it moves when routes
+          # are added rather than under load.
           resources:
             requests:
               cpu: 100m
             limits:
-              memory: 1Gi
+              memory: 256Mi
       envoyService:
         externalTrafficPolicy: Cluster
   shutdown:

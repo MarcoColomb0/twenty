@@ -311,8 +311,11 @@ spec:
       resources:
         requests:
           cpu: 10m
+        # Raised from 512Mi: the grafana container alone sits at 412Mi, so it
+        # was running at 80% of its ceiling with every dashboard load eating
+        # into the rest.
         limits:
-          memory: 512Mi
+          memory: 768Mi
 
     kube-state-metrics:
       resources:

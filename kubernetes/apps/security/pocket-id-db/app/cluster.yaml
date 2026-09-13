@@ -16,6 +16,18 @@ spec:
       isWALArchiver: true
       parameters:
         barmanObjectName: "pocket-id"
+  # Without this the pods are BestEffort, which is the first thing the kubelet
+  # evicts under node memory pressure -- so the database tier would be killed
+  # before any of the apps in front of it. Requests below the limit rather than
+  # equal to it, matching immich-db and affine-db: a Postgres pinned at
+  # request==limit is OOMKilled on a spike, and for a primary that is a
+  # failover. Observed use here is 113-121Mi per instance.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
   bootstrap:
     initdb:
       database: pocket-id

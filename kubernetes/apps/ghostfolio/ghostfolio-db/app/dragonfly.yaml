@@ -7,11 +7,16 @@ metadata:
 spec:
   replicas: 1
   args:
-    - --proactor_threads=3
+    # One thread, matching immich and affine. Dragonfly reserves 256MiB per
+    # proactor and refuses to start when maxmemory (80% of the limit) cannot
+    # cover them all, so three threads needed 768MiB and forced the 1Gi limit
+    # below -- and with it a 1Gi reservation for a cache that uses under 25Mi.
+    # Ghostfolio uses this as a cache, not a data store.
+    - --proactor_threads=1
     - --default_lua_flags=allow-undeclared-keys
     - --cluster_mode=emulated
   resources:
     requests:
       cpu: 200m
     limits:
-      memory: 1024Mi
+      memory: 512Mi
