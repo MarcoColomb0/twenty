@@ -1,0 +1,35 @@
+---
+# The public half of konflate, and deliberately only this. The UI is published
+# on the internal gateway by the chart; this route exposes the webhook endpoint
+# alone so a push re-renders the PR immediately instead of waiting out
+# refreshInterval.
+#
+# Same shape as network's github-webhook route: a path prefix on its own
+# hostname, verified by a shared secret the sender has to sign with. konflate
+# answers 501 on /hooks until KONFLATE_WEBHOOK_SECRET is set, and rejects an
+# unsigned or wrongly-signed POST after that.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: konflate-webhook
+  annotations:
+    # Not a page: GET /hooks is not a route konflate serves, so reaching the
+    # gateway at all is what is being checked here.
+    gatus.home-operations.com/endpoint: |
+      conditions:
+        - "[STATUS] == 405"
+spec:
+  hostnames:
+    - "konflate-webhook.${SECRET_DOMAIN}"
+  parentRefs:
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: konflate
+          port: 8080
+      matches:
+        - path:
+            type: Exact
+            value: /hooks
