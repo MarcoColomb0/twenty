@@ -110,7 +110,6 @@ and is not yet exposed.
 |---|---|---|
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [Immich](https://immich.app) | Photos and video. Internal gateway only, Pocket ID with no password login at all. Transcodes on one Intel iGPU and runs machine learning on the other over OpenVINO — the device plugin hands out one GPU per node, so the two consumers have to sit on different machines. Settings live in its database rather than a mounted file, because `IMMICH_CONFIG_FILE` makes the admin UI read-only. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/immich.svg"> | [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) | The one publicly exposed half of Immich. Serves shared album links and nothing else, so the library stays off the internet. |
-| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/affine.svg"> | [AFFiNE](https://affine.pro) | Notes and whiteboards. Its schema migration runs as an init container, which is how upstream orders it too. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/karakeep.svg"> | [Karakeep](https://karakeep.app) | Bookmarks and read-later. Crawler and search index run as sidecars reached over localhost, so neither is on the cluster network. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/actual-budget.svg"> | [Actual Budget](https://actualbudget.org) | Budgeting, SQLite-backed. Pocket ID is enforced — there is no server password to fall back to. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/ghostfolio.svg"> | [Ghostfolio](https://ghostfol.io) | Portfolio tracker, backed by CloudNativePG and Dragonfly. |
@@ -129,7 +128,7 @@ and is not yet exposed.
 
 Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates the client, writes the
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
-rebuilds it identically. Grafana, Immich, Karakeep, AFFiNE and Gatus all sign in this way.
+rebuilds it identically. Grafana, Immich, Karakeep and Gatus all sign in this way.
 
 Grafana has no login form at all: Pocket ID is the only way in through a browser, so there is no
 Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
@@ -220,8 +219,8 @@ Two deliberate choices worth knowing:
 
 | Data | Covered by | Status |
 |---|---|---|
-| `immich-data`, `affine-storage`, `karakeep-data`, `actual-data` | VolSync + restic | ✅ |
-| PostgreSQL (Immich, AFFiNE, Ghostfolio, Pocket ID) | barman-cloud → `twenty-postgres` | ⏳ not yet deployed |
+| `immich-data`, `karakeep-data`, `actual-data` | VolSync + restic | ✅ |
+| PostgreSQL (Immich, Ghostfolio, Pocket ID) | barman-cloud → `twenty-postgres` | ⏳ not yet deployed |
 | Prometheus, Meilisearch index, CrowdSec, ntfy cache | nothing, on purpose | expires or rebuilds itself |
 
 > **The databases are not backed up yet.** Until barman-cloud lands, a CloudNativePG cluster survives
@@ -392,7 +391,7 @@ kubernetes/apps/<namespace>/<app>/
 ```
 
 Namespaces map to directories under `kubernetes/apps/`:
-`actual`, `affine`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `miniflux`, `network`, `observability`, `security`, `storage`, `system-upgrade`, `tabby`, `vaultwarden`.
+`actual`, `cert-manager`, `database`, `default`, `flux-system`, `ghostfolio`, `immich`, `karakeep`, `kube-system`, `miniflux`, `network`, `observability`, `security`, `storage`, `system-upgrade`, `tabby`, `vaultwarden`.
 
 An app that owns a database gets its own namespace and keeps the `Cluster` beside it. CloudNativePG
 publishes the `-app` Secret next to the `Cluster`, and Secrets do not cross namespaces, so splitting
