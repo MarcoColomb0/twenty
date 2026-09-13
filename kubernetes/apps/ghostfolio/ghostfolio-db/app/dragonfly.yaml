@@ -7,7 +7,7 @@ metadata:
 spec:
   replicas: 1
   args:
-    # One thread, matching immich and affine. Dragonfly reserves 256MiB per
+    # One thread, matching immich. Dragonfly reserves 256MiB per
     # proactor and refuses to start when maxmemory (80% of the limit) cannot
     # cover them all, so three threads needed 768MiB and forced the 1Gi limit
     # below -- and with it a 1Gi reservation for a cache that uses under 25Mi.
