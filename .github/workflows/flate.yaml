@@ -1,0 +1,153 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: "Flate"
+
+on:
+  pull_request:
+    branches:
+      - "main"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  pre-job:
+    name: Flate Pre-Job
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      any_changed: ${{ steps.changed-files.outputs.any_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get Changed Files
+        id: changed-files
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        with:
+          files: kubernetes/**
+
+  test:
+    name: Flate Test
+    needs: pre-job
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: ${{ needs.pre-job.outputs.any_changed == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # base is emptied on purpose. The action exports FLATE_BASE unconditionally
+      # and defaults it to the default branch, which `flate test` then reads
+      # from the environment and switches to changed-only mode over -- against
+      # a rev this shallow checkout does not have:
+      #   flate error: could not resolve --base="main": not found locally or as origin/main
+      # Testing the whole tree is also what is wanted here rather than only the
+      # changed resources, since a change in one app can break the render of
+      # another, and the full pass takes about two seconds.
+      - name: Install Flate
+        uses: home-operations/flate/action@631b76b69c4e58c6f4d1cb01e23616fa61aebafa # v0.6.5
+        with:
+          base: ""
+          cache: true
+
+      - name: Run Flate Test
+        run: flate test all --path ./kubernetes/flux/cluster --no-progress
+
+  diff:
+    name: Flate Diff
+    needs: pre-job
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    if: ${{ needs.pre-job.outputs.any_changed == 'true' }}
+    steps:
+      # --base resolves a git rev itself, so unlike flux-local this needs one
+      # checkout rather than two -- but it needs the history to resolve against.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install Flate
+        uses: home-operations/flate/action@631b76b69c4e58c6f4d1cb01e23616fa61aebafa # v0.6.5
+        with:
+          cache: true
+
+      # One invocation covers Kustomizations and HelmReleases together, where
+      # flux-local needed a job per resource kind. --strip-attr is not passed:
+      # its default set is already helm.sh/chart, checksum/,
+      # app.kubernetes.io/version and chart, which is what was listed by hand
+      # before.
+      - name: Run Flate Diff
+        id: flate
+        run: |
+          flate diff all \
+            --path ./kubernetes/flux/cluster \
+            --base "origin/${BASE_REF}" \
+            --no-progress \
+            --output github > diff.patch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+
+      - name: Generate Diff
+        id: diff
+        run: |
+          # A whole-cluster render can exceed GitHub's 65536-char comment limit.
+          # Truncating here keeps the comment postable; the step summary above
+          # it and the job log both keep the full output.
+          head -c 60000 diff.patch > diff.trunc
+          if [ "$(wc -c < diff.patch)" -gt 60000 ]; then
+              echo '... truncated, see the job summary for the full diff' >> diff.trunc
+          fi
+          {
+              echo 'diff<<EOF'
+              cat diff.trunc
+              echo EOF
+          } >> "$GITHUB_OUTPUT"
+          {
+              echo "### Diff"
+              echo '```diff'
+              cat diff.patch
+              echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Add Comment
+        if: ${{ steps.diff.outputs.diff != '' }}
+        continue-on-error: true
+        uses: mshick/add-pr-comment@8e4927817251f1ff60c001f04568532b38e0b4a0 # v3.11
+        with:
+          message-id: "${{ github.event.pull_request.number }}/kubernetes"
+          message-failure: Diff was not successful
+          message: |
+            ```diff
+            ${{ steps.diff.outputs.diff }}
+            ```
+
+  flate-status:
+    name: Flate Success
+    needs:
+      - "test"
+      - "diff"
+    runs-on: ubuntu-latest
+    permissions: {}
+    if: ${{ always() }}
+    steps:
+      - name: Any jobs failed?
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
+
+      - name: All jobs passed or skipped?
+        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        run: echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"
