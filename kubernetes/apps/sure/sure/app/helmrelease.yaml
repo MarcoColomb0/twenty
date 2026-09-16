@@ -63,6 +63,47 @@ spec:
               DB_PORT: "5432"
               # Database 0; nothing else shares this Dragonfly.
               REDIS_URL: redis://sure-dragonfly:6379/0
+
+              # -- AI ---------------------------------------------------------
+              #
+              # The Oracle Ampere A1 that already serves Karakeep -- 2 vCPU, no
+              # GPU -- over Ollama's OpenAI-compatible API. Same model, so
+              # nothing new is loaded: OLLAMA_MAX_LOADED_MODELS is 1 and a
+              # second model would evict the first.
+              #
+              # Sure and Karakeep will queue behind each other, which is
+              # correct on this hardware rather than a limitation to tune away:
+              # two cores cannot run two inferences, and OLLAMA_NUM_PARALLEL is
+              # deliberately 1 for that reason.
+              #
+              # This covers auto-categorisation and merchant detection, both of
+              # which run in Sidekiq as batches. The chat sidebar and Insights
+              # will technically work and be slow; that is the trade for the
+              # feature costing nothing.
+              LLM_PROVIDER: openai
+              OPENAI_URI_BASE: https://ai.${SECRET_DOMAIN}/v1
+              # Required whenever URI Base is set -- Sure has no default for a
+              # custom endpoint.
+              OPENAI_MODEL: qwen2.5:3b-instruct-q4_K_M
+              # Prefill dominates on CPU, so the context window is the main
+              # lever on how long a batch takes. 2048 is Sure's default and
+              # matches what Karakeep settled on for this box.
+              LLM_CONTEXT_WINDOW: "2048"
+              LLM_MAX_RESPONSE_TOKENS: "512"
+              # Down from the default of 25. The ceiling here is not Sure's
+              # timeout but Cloudflare's: it severs a request at 100 seconds on
+              # every plan below Enterprise, and no application-side setting can
+              # rescue a connection the edge has already cut. Smaller batches
+              # keep each call inside that.
+              LLM_MAX_ITEMS_PER_CALL: "10"
+              # Under the 100s edge limit on purpose, so Sure gives up and
+              # retries rather than the request dying at the proxy.
+              OPENAI_REQUEST_TIMEOUT: "90"
+              OPENAI_ACCESS_TOKEN:
+                valueFrom:
+                  secretKeyRef:
+                    name: sure-ai
+                    key: OPENAI_ACCESS_TOKEN
               POSTGRES_DB:
                 valueFrom:
                   secretKeyRef:
