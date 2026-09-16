@@ -1,0 +1,133 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: litellm
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: litellm
+  interval: 1h
+  values:
+    controllers:
+      litellm:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/berriai/litellm
+              tag: v1.101.0
+            args:
+              - "--config"
+              - "/config/config.yaml"
+              - "--port"
+              - "4000"
+            env:
+              # Signs and validates the virtual keys. Rotating it invalidates
+              # every key already handed out.
+              LITELLM_MASTER_KEY:
+                valueFrom:
+                  secretKeyRef:
+                    name: &secret litellm-secret
+                    key: LITELLM_MASTER_KEY
+              # Encrypts credentials at rest in the database. Unlike the master
+              # key this one can never change once rows exist -- a different
+              # salt makes every stored value undecryptable.
+              LITELLM_SALT_KEY:
+                valueFrom:
+                  secretKeyRef:
+                    name: *secret
+                    key: LITELLM_SALT_KEY
+              DATABASE_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-litellm-app
+                    key: uri
+              STORE_MODEL_IN_DB: "true"
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health/liveliness
+                    port: &port 4000
+                  initialDelaySeconds: 0
+                  periodSeconds: 15
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health/readiness
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health/readiness
+                    port: *port
+                  # It runs Prisma migrations against the CNPG database on the
+                  # way up, so first boot is slower than a restart.
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 60
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 512Mi
+              limits:
+                memory: 2Gi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      config:
+        type: configMap
+        name: litellm-config
+        globalMounts:
+          - path: /config/config.yaml
+            subPath: config.yaml
+            readOnly: true
+      # readOnlyRootFilesystem leaves nothing writable, and the proxy writes
+      # Prisma's generated client and its own scratch files at startup.
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        # Internal only. LiteLLM's own auth is a bearer key and the admin UI
+        # sits on the same port, so this is not something to publish -- and
+        # nothing outside the LAN or the tailnet needs to reach it.
+        hostnames:
+          - "litellm.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
