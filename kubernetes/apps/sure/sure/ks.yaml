@@ -1,0 +1,29 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sure
+spec:
+  dependsOn:
+    # Reads postgres-sure-app, which CNPG publishes beside the Cluster in this
+    # namespace, and needs Dragonfly up for Sidekiq to enqueue.
+    - name: sure-db
+      namespace: sure
+  interval: 1h
+  path: ./kubernetes/apps/sure/sure/app
+  postBuild:
+    substitute:
+      APP: sure
+      VOLSYNC_CLAIM: sure-storage
+      VOLSYNC_SCHEDULE: "0 7 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: sure
+  wait: false
