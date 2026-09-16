@@ -1,0 +1,24 @@
+---
+# A podSelector with no namespaceSelector matches only pods in this namespace,
+# so this admits the Sure pod -- which is both the Rails web container and the
+# Sidekiq worker -- and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sure-dragonfly-allow-app
+spec:
+  podSelector:
+    matchLabels:
+      app: sure-dragonfly
+      app.kubernetes.io/name: dragonfly
+      app.kubernetes.io/part-of: dragonfly
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sure
+      ports:
+        - port: 6379
+          protocol: TCP
+  policyTypes:
+    - Ingress

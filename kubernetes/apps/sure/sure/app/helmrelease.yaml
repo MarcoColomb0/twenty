@@ -1,0 +1,197 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: sure
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: sure
+  interval: 1h
+  values:
+    controllers:
+      sure:
+        # Rails and Sidekiq share /rails/storage -- Active Storage writes
+        # uploads from the web request and the worker reads them back -- so they
+        # are two containers in one pod rather than two Deployments. A
+        # ReadWriteOnce Longhorn volume could not be mounted by both otherwise,
+        # and that also makes a rolling update deadlock on the attach.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        initContainers:
+          # db:prepare creates the schema on an empty database and migrates an
+          # existing one, so it covers both first boot and every upgrade.
+          # DISABLE_DATABASE_ENVIRONMENT_CHECK is what lets it run against a
+          # database Rails did not create itself -- here CNPG's initdb did.
+          migrate:
+            image: &image
+              repository: ghcr.io/we-promise/sure
+              tag: 0.7.4
+            command:
+              - "sh"
+              - "-c"
+              - "DISABLE_DATABASE_ENVIRONMENT_CHECK=1 bundle exec rake db:prepare"
+            envFrom: &envFrom
+              - secretRef:
+                  name: sure-secret
+            env: &env
+              RAILS_ENV: production
+              SELF_HOSTED: "true"
+              # Envoy terminates TLS and talks plaintext to the pod. ASSUME_SSL
+              # makes Rails generate https:// URLs and mark cookies secure;
+              # FORCE_SSL stays off because a redirect decided in the pod would
+              # loop against a proxy that already served https.
+              RAILS_ASSUME_SSL: "true"
+              RAILS_FORCE_SSL: "false"
+              DB_HOST: postgres-sure-rw
+              DB_PORT: "5432"
+              # Database 0; nothing else shares this Dragonfly.
+              REDIS_URL: redis://sure-dragonfly:6379/0
+              POSTGRES_DB:
+                valueFrom:
+                  secretKeyRef:
+                    name: &pg postgres-sure-app
+                    key: dbname
+              POSTGRES_USER:
+                valueFrom:
+                  secretKeyRef:
+                    name: *pg
+                    key: username
+              POSTGRES_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: *pg
+                    key: password
+
+              # -- SSO ------------------------------------------------------
+              #
+              # Local email/password login is off, so the login page offers
+              # Pocket ID and nothing else. That matters more here than on most
+              # apps: Sure's own docs tell you to register the first user and
+              # *then* restrict signups in Settings, which on a published URL is
+              # an open registration form for however long that takes.
+              #
+              # The admin override is the break-glass path: with local login
+              # disabled a super_admin can still sign in with a password, so a
+              # broken Pocket ID does not lock the owner out of their ledger.
+              # Regular users stay SSO-only either way.
+              AUTH_LOCAL_LOGIN_ENABLED: "false"
+              AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED: "true"
+              # create_and_link is required for the very first sign-in to
+              # produce a user at all. It is also why the Pocket ID client is
+              # restricted to the sure-users group -- see oidcclient.yaml.
+              AUTH_JIT_MODE: create_and_link
+              OIDC_ISSUER: https://id.${SECRET_DOMAIN}
+              OIDC_REDIRECT_URI: https://sure.${SECRET_DOMAIN}/auth/openid_connect/callback
+              OIDC_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc sure-oidc
+                    key: client_id
+              OIDC_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            securityContext: &securityContext
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+        containers:
+          app:
+            image: *image
+            env: *env
+            envFrom: *envFrom
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /up
+                    port: &port 3000
+                  initialDelaySeconds: 0
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /up
+                    port: *port
+                  # Rails boots slowly, and the migrate init container has
+                  # already run by this point.
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 30
+            securityContext: *securityContext
+            resources:
+              requests:
+                cpu: 100m
+                memory: 384Mi
+              limits:
+                memory: 1Gi
+          worker:
+            image: *image
+            command:
+              - "bundle"
+              - "exec"
+              - "sidekiq"
+            env: *env
+            envFrom: *envFrom
+            # Sidekiq serves no HTTP, so there is nothing to probe. Its health
+            # is whether jobs drain, which Prometheus cannot see either -- a
+            # dead worker here is silent, which is the failure mode upstream
+            # warns about.
+            securityContext: *securityContext
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 768Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      storage:
+        existingClaim: sure-storage
+        globalMounts:
+          - path: /rails/storage
+      # readOnlyRootFilesystem leaves nothing else writable, and Rails wants a
+      # tmp/ for pids, cache and uploads in flight.
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /rails/tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "sure.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
