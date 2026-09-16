@@ -1,0 +1,49 @@
+---
+# LiteLLM's proxy config. Kept as a ConfigMap rather than chart values because
+# it is a file the process reads with --config, not an env contract.
+#
+# Nothing here carries a provider credential, which is the point of the
+# arrangement below -- see the comment on forward_client_headers_to_llm_api.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+data:
+  config.yaml: |-
+    model_list:
+      # No api_key on these entries, deliberately. The caller supplies its own
+      # credential and LiteLLM passes it through; see general_settings below.
+      - model_name: claude-sonnet-5
+        litellm_params:
+          model: anthropic/claude-sonnet-5
+      - model_name: claude-opus-5
+        litellm_params:
+          model: anthropic/claude-opus-5
+      - model_name: claude-haiku-4-5
+        litellm_params:
+          model: anthropic/claude-haiku-4-5-20251001
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      database_url: os.environ/DATABASE_URL
+      # This is what makes a Claude subscription work through the proxy, and it
+      # is also what keeps the arrangement honest: the caller's own
+      # Authorization header -- the OAuth token Claude Code got from
+      # `claude /login` -- is forwarded to Anthropic untouched. LiteLLM holds no
+      # Anthropic credential of its own and cannot mint one, so it gates and
+      # measures traffic without ever becoming a way to share one person's
+      # subscription with everything on the LAN.
+      forward_client_headers_to_llm_api: true
+
+    litellm_settings:
+      # Dragonfly, not an in-process cache, so a second replica sees the same
+      # entries and a restart does not start cold.
+      cache: true
+      cache_params:
+        type: redis
+        host: litellm-dragonfly
+        port: 6379
+      # The request log is the reason the database exists; without this the
+      # spend and key tables stay empty.
+      store_prompts_in_spend_logs: false
+      drop_params: true

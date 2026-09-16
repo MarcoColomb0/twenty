@@ -1,0 +1,23 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: litellm
+spec:
+  dependsOn:
+    # Reads postgres-litellm-app, which CNPG publishes beside the Cluster.
+    - name: litellm-db
+      namespace: litellm
+  interval: 1h
+  path: ./kubernetes/apps/litellm/litellm/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: litellm
+  wait: false
