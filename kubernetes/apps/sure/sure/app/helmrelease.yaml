@@ -93,10 +93,27 @@ spec:
               # Regular users stay SSO-only either way.
               AUTH_LOCAL_LOGIN_ENABLED: "false"
               AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED: "true"
-              # create_and_link is required for the very first sign-in to
-              # produce a user at all. It is also why the Pocket ID client is
-              # restricted to the sure-users group -- see oidcclient.yaml.
-              AUTH_JIT_MODE: create_and_link
+              # Onboarding is closed, and it takes both of these.
+              #
+              # ONBOARDING_STATE closes the local registration controller:
+              # ensure_signup_open redirects to the login page when it is
+              # "closed". It is only a default for a rails-settings field, so
+              # it applies until someone writes the setting from the admin UI,
+              # after which the database wins and this is ignored.
+              #
+              # It does NOT cover SSO. onboarding_state is referenced only by
+              # the registrations controller and the hosting settings screen --
+              # nothing in the OIDC path reads it -- so with JIT left at
+              # create_and_link a provider identity would still mint a user and
+              # a family, which is the "logging in is signing up" shape this
+              # repository has been bitten by before. link_only requires the
+              # identity to match an existing user and blocks creation.
+              #
+              # link_only is only safe once an account exists: it was
+              # create_and_link for the first sign-in, and there is now one
+              # user, already super_admin.
+              ONBOARDING_STATE: closed
+              AUTH_JIT_MODE: link_only
               OIDC_ISSUER: https://id.${SECRET_DOMAIN}
               OIDC_REDIRECT_URI: https://sure.${SECRET_DOMAIN}/auth/openid_connect/callback
               OIDC_CLIENT_ID:
