@@ -34,10 +34,24 @@ spec:
               # service anyway, since it is on the internal gateway.
               aliasgroup1: https://drive.${SECRET_DOMAIN}:443
               server_name: collabora.${SECRET_DOMAIN}
-              # Envoy terminates TLS and speaks plaintext to the pod. Without
-              # ssl.termination the generated URLs come back as http:// and the
-              # browser blocks them as mixed content.
-              extra_params: --o:ssl.enable=false --o:ssl.termination=true
+              # ssl.termination: Envoy terminates TLS and speaks plaintext to
+              # the pod. Without it the generated URLs come back as http:// and
+              # the browser blocks them as mixed content.
+              #
+              # net.frame_ancestors: Collabora sends a Content-Security-Policy
+              # naming who may embed it, and by default that is only itself:
+              #   frame-ancestors collabora.${SECRET_DOMAIN}:*
+              # The editor is an iframe inside OxiCloud, so the browser refused
+              # the frame and Chrome reported it as "refused to connect" --
+              # indistinguishable from the host being unreachable, which is what
+              # makes this one slow to spot. Adding the OxiCloud host appends to
+              # the directive rather than replacing it:
+              #   frame-ancestors drive.${SECRET_DOMAIN}:* collabora.${SECRET_DOMAIN}:*
+              #
+              # Deliberately the one host, not `https://*`: this directive is
+              # the control that stops any other site embedding the editor and
+              # driving it with a victim's session.
+              extra_params: --o:ssl.enable=false --o:ssl.termination=true --o:net.frame_ancestors=drive.${SECRET_DOMAIN}:*
               username: admin
               password:
                 valueFrom:
