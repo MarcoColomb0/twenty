@@ -96,6 +96,11 @@ spec:
               OXICLOUD_AUTH_POLICIES: auto_redirect_if_standalone_oidc
               OXICLOUD_OIDC_PROVIDER_NAME: Pocket ID
               OXICLOUD_OIDC_ISSUER_URL: https://id.${SECRET_DOMAIN}
+              # The default is "openid profile email", which never asks for the
+              # groups claim -- so OXICLOUD_OIDC_ADMIN_GROUPS below could never
+              # match and every account came out as a plain user. Pocket ID
+              # advertises `groups` in scopes_supported and emits it as a claim.
+              OXICLOUD_OIDC_SCOPES: openid profile email groups
               # Group membership in Pocket ID is what grants admin. There is no
               # console to promote a user afterwards, so this has to be right
               # before the first login.

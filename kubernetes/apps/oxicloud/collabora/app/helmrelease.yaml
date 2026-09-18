@@ -32,7 +32,18 @@ spec:
               # literal dot -- it just also matches "driveXmarcoYwf", which
               # nobody can obtain a certificate for and which cannot reach this
               # service anyway, since it is on the internal gateway.
-              aliasgroup1: https://drive.${SECRET_DOMAIN}:443
+              #
+              # Both entries are the same OxiCloud, which is what an alias
+              # *group* is for. The second one is not optional: WOPISrc carries
+              # OXICLOUD_WOPI_BASE_URL, which is the in-cluster service so the
+              # editor's callbacks never leave the pod network -- and Collabora
+              # validates that host against this list before it will open
+              # anything:
+              #   No authorized hosts found matching the target host
+              #   [oxicloud.oxicloud.svc.cluster.local] in config
+              # With only the public name listed the iframe loads and then sits
+              # at a bare status bar, because the document never arrives.
+              aliasgroup1: https://drive.${SECRET_DOMAIN}:443,http://oxicloud.oxicloud.svc.cluster.local:8086
               server_name: collabora.${SECRET_DOMAIN}
               # ssl.termination: Envoy terminates TLS and speaks plaintext to
               # the pod. Without it the generated URLs come back as http:// and
