@@ -1,0 +1,15 @@
+---
+# OXICLOUD_METRICS_LISTEN binds a second listener with no auth, CSRF or DPoP in
+# front of it -- upstream is explicit that it must not share the public port.
+# It is bound to the pod IP on 9090 and only reachable in-cluster; the HTTPRoute
+# publishes the 8086 service port alone.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: oxicloud
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oxicloud
+  endpoints:
+    - port: metrics

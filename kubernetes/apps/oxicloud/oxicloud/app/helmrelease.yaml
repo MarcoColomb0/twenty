@@ -1,0 +1,192 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: oxicloud
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: oxicloud
+  interval: 1h
+  values:
+    controllers:
+      oxicloud:
+        # One ReadWriteOnce volume holding the blob store, so two pods cannot
+        # run at once and a rolling update would deadlock on the attach.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: docker.io/diocrafts/oxicloud
+              tag: 0.9.1
+            env:
+              # Default is 127.0.0.1, which answers nothing from outside the
+              # pod and fails every probe.
+              OXICLOUD_SERVER_HOST: 0.0.0.0
+              OXICLOUD_SERVER_PORT: &port 8086
+              OXICLOUD_STORAGE_PATH: /app/storage
+              OXICLOUD_BASE_URL: https://drive.${SECRET_DOMAIN}
+              # Share links and the OIDC redirect are built from these, so they
+              # have to be the public name rather than the service name.
+              OXICLOUD_OIDC_FRONTEND_URL: https://drive.${SECRET_DOMAIN}
+              OXICLOUD_OIDC_REDIRECT_URI: https://drive.${SECRET_DOMAIN}/api/auth/oidc/callback
+              # Scratch for extractors (id3, ffprobe, exif). The root filesystem
+              # is read-only, and the emptyDir below is disk-backed rather than
+              # the tmpfs upstream warns about on RAM-constrained hosts.
+              OXICLOUD_TEMP_DIR: /tmp
+              # Without this every request appears to come from the Envoy pod,
+              # so rate limiting and the audit log see one client.
+              OXICLOUD_TRUST_PROXY_CIDR: 10.42.0.0/16
+              # Envoy terminates TLS; the cookies still have to be marked
+              # secure because the browser's leg is https.
+              OXICLOUD_COOKIE_SECURE: "true"
+              # Second listener on the pod IP for the ServiceMonitor. Upstream
+              # is explicit that it has no auth in front of it, which is why it
+              # is deliberately not the public port.
+              OXICLOUD_METRICS_LISTEN: 0.0.0.0:9090
+
+              # -- Auth -------------------------------------------------------
+              #
+              # oidc alone is upstream's "cleanest SSO-only posture": it removes
+              # POST /api/auth/login and password registration outright rather
+              # than hiding the form. Magic-link is hard-disabled whenever OIDC
+              # is on, so Pocket ID is the only door.
+              #
+              # This is fail-fast by design -- oidc in the list without
+              # OXICLOUD_OIDC_ENABLED panics at boot rather than quietly
+              # serving passwords.
+              OXICLOUD_AUTH_METHODS: oidc
+              OXICLOUD_OIDC_ENABLED: "true"
+              # Belt and braces: with password registration already gone this
+              # changes nothing today, but it is the switch that stops a future
+              # AUTH_METHODS edit from reopening public sign-up by accident.
+              OXICLOUD_DISABLE_REGISTRATION: "true"
+              # Sends the browser straight to Pocket ID instead of showing a
+              # click-through button, which is safe here precisely because OIDC
+              # is the only method -- there is no other login to fall back to.
+              OXICLOUD_AUTH_POLICIES: auto_redirect_if_standalone_oidc
+              OXICLOUD_OIDC_PROVIDER_NAME: Pocket ID
+              OXICLOUD_OIDC_ISSUER_URL: https://id.${SECRET_DOMAIN}
+              # Group membership in Pocket ID is what grants admin. There is no
+              # console to promote a user afterwards, so this has to be right
+              # before the first login.
+              OXICLOUD_OIDC_ADMIN_GROUPS: oxicloud-admins
+              OXICLOUD_OIDC_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc oxicloud-oidc
+                    key: client_id
+              OXICLOUD_OIDC_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+              OXICLOUD_DB_CONNECTION_STRING:
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-oxicloud-app
+                    key: uri
+              # Signs every session. Left unset it is generated and written to
+              # <STORAGE_PATH>/.jwt_secret, which works but ties every session
+              # to that one file -- restoring the volume from a backup taken
+              # before it existed would silently rotate it. Explicit here so it
+              # lives in SOPS with everything else.
+              OXICLOUD_JWT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: oxicloud-secret
+                    key: OXICLOUD_JWT_SECRET
+            probes:
+              # /health is the HTTP-only check upstream uses for liveness --
+              # deliberately no database round-trip, so a slow Postgres does not
+              # restart the pod.
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              # /ready does check the database, which is what readiness should
+              # gate on.
+              readiness: &ready
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /ready
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /ready
+                    port: *port
+                  # First boot runs the schema migrations against an empty
+                  # database. The startup jobs do not block readiness.
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 60
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              # Thumbnailing, transcode and zip run on the blocking pool, and
+              # Argon2 costs ~19MB per hash. OXICLOUD_MAX_BLOCKING_THREADS is
+              # already capped below tokio's default for this reason.
+              limits:
+                memory: 1Gi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        # 1001 is the oxicloud user baked into the image. The entrypoint chowns
+        # the volume only when it starts as root and otherwise execs the binary
+        # directly, so starting non-root is a supported path -- fsGroup is what
+        # makes the mount writable.
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      storage:
+        existingClaim: oxicloud-storage
+        globalMounts:
+          - path: /app/storage
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+          metrics:
+            port: 9090
+    route:
+      app:
+        hostnames:
+          - "drive.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
