@@ -47,6 +47,33 @@ spec:
               # is deliberately not the public port.
               OXICLOUD_METRICS_LISTEN: 0.0.0.0:9090
 
+              # -- WOPI -------------------------------------------------------
+              #
+              # Collabora edits documents in an iframe, so two different URLs
+              # are involved and they are not interchangeable:
+              #
+              #   PUBLIC_BASE_URL  the browser's view of OxiCloud, because the
+              #                    iframe's WOPISrc is resolved by the browser
+              #   BASE_URL         Collabora's view of OxiCloud, resolved
+              #                    server-side inside the cluster, so it never
+              #                    leaves the pod network
+              #
+              # DISCOVERY_URL is also in-cluster: OxiCloud fetches Collabora's
+              # capability list itself, which is why Collabora needs no public
+              # name for that leg.
+              OXICLOUD_WOPI_ENABLED: "true"
+              OXICLOUD_WOPI_DISCOVERY_URL: http://collabora.oxicloud.svc.cluster.local:9980/hosting/discovery
+              OXICLOUD_WOPI_BASE_URL: http://oxicloud.oxicloud.svc.cluster.local:8086
+              OXICLOUD_WOPI_PUBLIC_BASE_URL: https://drive.${SECRET_DOMAIN}
+              # Defaults to the JWT secret when unset. Given its own value so
+              # that rotating WOPI tokens does not invalidate every session, and
+              # so a leaked WOPI token cannot be replayed as a session token.
+              OXICLOUD_WOPI_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: oxicloud-secret
+                    key: OXICLOUD_WOPI_SECRET
+
               # -- Auth -------------------------------------------------------
               #
               # oidc alone is upstream's "cleanest SSO-only posture": it removes

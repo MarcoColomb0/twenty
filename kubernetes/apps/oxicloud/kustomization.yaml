@@ -8,5 +8,6 @@ components:
 
 resources:
   - ./namespace.yaml
+  - ./collabora/ks.yaml
   - ./oxicloud-db/ks.yaml
   - ./oxicloud/ks.yaml

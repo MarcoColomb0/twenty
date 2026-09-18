@@ -1,0 +1,131 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: collabora
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: collabora
+  interval: 1h
+  values:
+    controllers:
+      collabora:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: docker.io/collabora/code
+              tag: 26.04.4.1.1
+            env:
+              # The WOPI host allowlist. Collabora refuses to open a document
+              # for any host not named here, which is the control that stops a
+              # stranger pointing their own WOPI server at this editor and
+              # using it as an open document-conversion service.
+              #
+              # Collabora matches this as a regex, so the dots are technically
+              # wildcards. Left unescaped rather than half-escaped: the domain
+              # arrives through ${SECRET_DOMAIN} and Flux would not escape the
+              # dot inside it, so writing \. by hand only tightens the one dot
+              # that happens to be typed here. An unescaped dot still matches a
+              # literal dot -- it just also matches "driveXmarcoYwf", which
+              # nobody can obtain a certificate for and which cannot reach this
+              # service anyway, since it is on the internal gateway.
+              aliasgroup1: https://drive.${SECRET_DOMAIN}:443
+              server_name: collabora.${SECRET_DOMAIN}
+              # Envoy terminates TLS and speaks plaintext to the pod. Without
+              # ssl.termination the generated URLs come back as http:// and the
+              # browser blocks them as mixed content.
+              extra_params: --o:ssl.enable=false --o:ssl.termination=true
+              username: admin
+              password:
+                valueFrom:
+                  secretKeyRef:
+                    name: collabora-secret
+                    key: ADMIN_PASSWORD
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /hosting/discovery
+                    port: &port 9980
+                  initialDelaySeconds: 0
+                  periodSeconds: 20
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /hosting/discovery
+                    port: *port
+                  # It forks a pool of LibreOffice children at boot, which is
+                  # slower than the HTTP listener coming up.
+                  initialDelaySeconds: 15
+                  periodSeconds: 5
+                  failureThreshold: 40
+            securityContext:
+              allowPrivilegeEscalation: false
+              # Everything dropped except MKNOD, which coolwsd needs to build
+              # the chroot jails each document is rendered inside. That jail is
+              # Collabora's own sandbox, so removing the capability to satisfy
+              # a blanket drop-ALL would trade a real isolation boundary for a
+              # cosmetic one.
+              capabilities:
+                drop:
+                  - "ALL"
+                add:
+                  - "MKNOD"
+              # Not readOnlyRootFilesystem: coolwsd builds the jail trees under
+              # /opt/cool at runtime and writes rendered tiles and per-document
+              # scratch as it goes.
+              readOnlyRootFilesystem: false
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              # One LibreOffice child per open document, on top of the base
+              # pool. This is the ceiling for a household, not a target.
+              limits:
+                memory: 2Gi
+    defaultPodOptions:
+      securityContext:
+        # cool (uid 100) is the user the image runs as; it needs to own the
+        # jail trees it builds.
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        # Internal only, deliberately. The browser has to reach the editor --
+        # it is an iframe, not a server-to-server call -- so this is the one
+        # piece that cannot live entirely inside the cluster. Putting it on the
+        # internal gateway means the editor, its websocket endpoints and the
+        # admin console at /browser/dist/admin/ are reachable over the LAN and
+        # the tailnet and nowhere else, while OxiCloud itself stays published.
+        #
+        # The cost: editing works from a device on the LAN or the tailnet, not
+        # from an arbitrary browser on the internet. Moving this to
+        # envoy-external is a one-line change if that trade stops being worth
+        # it -- but then the admin console is published too.
+        hostnames:
+          - "collabora.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

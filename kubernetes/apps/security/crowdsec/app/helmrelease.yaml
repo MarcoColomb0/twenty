@@ -165,6 +165,27 @@ spec:
                 - RemoveInBandRuleByID(920450) # HTTP header restricted by policy
                 - RemoveInBandRuleByID(920451) # HTTP header restricted by policy
                 - RemoveInBandRuleByID(920480) # content type charset not allowed by policy
+          # 911100 is REQUEST-911-METHOD-ENFORCEMENT: anything outside
+          # tx.allowed_methods (GET HEAD POST OPTIONS) is a single-strike block.
+          # WebDAV is built out of PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK
+          # and UNLOCK, so with this rule in band OxiCloud's sync and its
+          # NextCloud-compatible chunked upload path cannot work at all.
+          #
+          # Scoped with pre_eval rather than removed in on_load like the rules
+          # above: those are broken for every modern app, this one is only
+          # wrong for the file-sync host. Every other published app keeps method
+          # enforcement, which is worth having -- an unexpected PUT or DELETE
+          # against Vaultwarden or Grafana is still a single-strike block.
+          #
+          # There is no hub collection for OxiCloud or Collabora. The Nextcloud
+          # CRS exclusion plugin was considered and rejected: it keys on
+          # Nextcloud's own paths (/remote.php/dav/files, /ocs/v2.php/) and user
+          # agents, none of which OxiCloud serves, so it would load 200-odd
+          # exclusions that never match.
+          pre_eval:
+            - filter: IsInBand && req.Host == "drive.${SECRET_DOMAIN}"
+              apply:
+                - RemoveInBandRuleByID(911100) # method not allowed by policy
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
