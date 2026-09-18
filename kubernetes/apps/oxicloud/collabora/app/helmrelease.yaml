@@ -95,12 +95,17 @@ spec:
                 memory: 2Gi
     defaultPodOptions:
       securityContext:
-        # cool (uid 100) is the user the image runs as; it needs to own the
-        # jail trees it builds.
+        # 1001, which is what the image itself declares (`User: "1001"` in its
+        # config blob) and what owns /opt/cool. Running as anything else fails
+        # before the HTTP listener is up, because coolwsd builds a chroot jail
+        # per document under a tree it then cannot write:
+        #   Failed to initialize COOLWSD: filesystem error:
+        #   cannot create directories: Permission denied
+        #   [/opt/cool/child-roots/1-56594D07/systmp]
+        # No fsGroup -- there is no volume here to own.
         runAsNonRoot: true
-        runAsUser: 100
-        runAsGroup: 101
-        fsGroup: 101
+        runAsUser: 1001
+        runAsGroup: 1001
     service:
       app:
         ports:
