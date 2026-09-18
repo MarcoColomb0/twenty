@@ -1,0 +1,41 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: oxicloud
+spec:
+  callbackUrls:
+    - https://drive.${SECRET_DOMAIN}/api/auth/oidc/callback
+  logoutCallbackUrls:
+    - https://drive.${SECRET_DOMAIN}
+  pkceEnabled: true
+  skipConsent: true
+  # OXICLOUD_OIDC_AUTO_PROVISION defaults to true and is left on, because with
+  # OXICLOUD_AUTH_METHODS=oidc there is no other way for the first account to
+  # exist. That makes this group the access list: any identity Pocket ID issues
+  # a code to gets an account created on first login. Same shape as Vaultwarden
+  # and Sure.
+  allowedUserGroups:
+    - name: oxicloud-users
+  secret:
+    name: oxicloud-oidc
+    keys:
+      clientID: client_id
+      clientSecret: client_secret
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDUserGroup
+metadata:
+  name: oxicloud-users
+spec:
+  friendlyName: OxiCloud Users
+---
+# OXICLOUD_OIDC_ADMIN_GROUPS matches on this group's name, so membership here is
+# what grants the admin role -- there is no Rails-console equivalent to promote
+# someone after the fact.
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDUserGroup
+metadata:
+  name: oxicloud-admins
+spec:
+  friendlyName: OxiCloud Admins

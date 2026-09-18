@@ -1,0 +1,19 @@
+---
+# /app/storage -- the blob store. Every uploaded file lives here, plus the
+# chunked-upload spool under .uploads and thumbnails. This is the volume that
+# actually grows, and the only copy of the files outside VolSync.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: oxicloud-storage
+  annotations:
+    resize.topolvm.io/storage_limit: 200Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 20Gi
