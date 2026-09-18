@@ -257,13 +257,13 @@ spec:
             url: https://raw.githubusercontent.com/0xERR0R/blocky/v0.35.0/docs/blocky-grafana.json
             datasource: Prometheus
           envoy-gateway:
-            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.1/charts/gateway-addons-helm/dashboards/envoy-gateway-global.json
             datasource: Prometheus
           envoy-proxy:
-            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-proxy-global.json
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.1/charts/gateway-addons-helm/dashboards/envoy-proxy-global.json
             datasource: Prometheus
           envoy-clusters:
-            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.8.2/charts/gateway-addons-helm/dashboards/envoy-clusters.json
+            url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.1/charts/gateway-addons-helm/dashboards/envoy-clusters.json
             datasource: Prometheus
           flux-performance:
             url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-performance.json
