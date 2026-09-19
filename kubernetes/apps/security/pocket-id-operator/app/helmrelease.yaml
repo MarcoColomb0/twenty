@@ -32,7 +32,7 @@ spec:
           # process below it, so the app has to be moved first and explicitly.
           # Pinning it here also lets Renovate's kubernetes manager track
           # pocket-id directly instead of inheriting the operator's default.
-          image: ghcr.io/pocket-id/pocket-id:v2.14.0-distroless
+          image: ghcr.io/pocket-id/pocket-id:v2.15.0-distroless
 
           encryptionKey:
             valueFrom:
