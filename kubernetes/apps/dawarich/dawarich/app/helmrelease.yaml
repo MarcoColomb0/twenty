@@ -73,6 +73,17 @@ spec:
               # One preloaded Puma worker is plenty for a household instance
               # and halves idle memory.
               WEB_CONCURRENCY: "1"
+              # Sidekiq threads. Unset, this is not 3: the entrypoint only
+              # sanitizes the variable, it does not supply it, so config/
+              # sidekiq.yml's own fallback of 10 wins and the running worker
+              # reported "concurrency: 10". Upstream's compose sets 3, and 3 is
+              # what the memory limit and the connection pool here are sized
+              # for -- ten threads each take a Postgres connection.
+              #
+              # It is also the right shape for the geocoding backfill, which is
+              # bounded by chibigeo's 2500 requests/day rather than by how many
+              # threads ask at once.
+              BACKGROUND_PROCESSING_CONCURRENCY: "3"
               # Addresses are stored once resolved, so a point is geocoded a
               # single time rather than on every view. That matters directly
               # here: the free chibigeo tier is 2500 requests/day.
