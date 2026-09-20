@@ -118,11 +118,22 @@ spec:
           group_interval: 5m
           repeat_interval: 12h
           routes:
-            # Watchdog fires constantly by design, as proof the pipeline works.
-            # It is the one alert worth dropping.
+            # The two alerts that carry severity="none", and the only two that
+            # exist to be dropped rather than read. Watchdog fires constantly by
+            # design, as proof the pipeline works. InfoInhibitor fires whenever
+            # any severity="info" alert is firing, and upstream's own
+            # description says it "should be routed to a null receiver" -- it is
+            # meant to be the source of an inhibit_rule, never a notification.
+            #
+            # There is no inhibit_rule here because the route below drops
+            # severity="info" outright, which is strictly quieter than
+            # inhibiting it conditionally: the pattern InfoInhibitor exists for
+            # would *deliver* info alerts once a warning or critical joined them
+            # in the same namespace. Given ntfy's message limit has already
+            # taken this pipeline down once, the blanket drop stays.
             - receiver: "null"
               matchers:
-                - alertname = "Watchdog"
+                - alertname =~ "Watchdog|InfoInhibitor"
             - receiver: "null"
               matchers:
                 - severity = "info"
