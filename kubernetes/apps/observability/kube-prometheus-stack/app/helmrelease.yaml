@@ -125,12 +125,22 @@ spec:
             # description says it "should be routed to a null receiver" -- it is
             # meant to be the source of an inhibit_rule, never a notification.
             #
-            # There is no inhibit_rule here because the route below drops
-            # severity="info" outright, which is strictly quieter than
-            # inhibiting it conditionally: the pattern InfoInhibitor exists for
-            # would *deliver* info alerts once a warning or critical joined them
-            # in the same namespace. Given ntfy's message limit has already
-            # taken this pipeline down once, the blanket drop stays.
+            # The inhibit_rules this pairs with are not written here and are
+            # not absent: `config` merges with the chart's defaults rather than
+            # replacing them, so the rendered config carries four, including
+            # `source alertname="InfoInhibitor" -> target severity="info"`.
+            # Only the route was missing, which is why InfoInhibitor reached
+            # ntfy. Read the rendered config, not this block:
+            #
+            #   amtool config show --alertmanager.url=http://localhost:9093
+            #
+            # Those rules are inert here anyway: the route below drops
+            # severity="info" outright, so there is nothing left for them to
+            # inhibit. That is deliberate and strictly quieter than the pattern
+            # InfoInhibitor exists for, which would *deliver* info alerts once a
+            # warning or critical joined them in the same namespace. Given
+            # ntfy's message limit has already taken this pipeline down once,
+            # the blanket drop stays.
             - receiver: "null"
               matchers:
                 - alertname =~ "Watchdog|InfoInhibitor"
