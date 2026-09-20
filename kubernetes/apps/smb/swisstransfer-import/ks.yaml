@@ -1,0 +1,25 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: swisstransfer-import
+spec:
+  dependsOn:
+    # Needs samba-data bound, and needs the samba pod scheduled -- the Job's
+    # podAffinity has nothing to match until it exists.
+    - name: samba
+      namespace: smb
+  interval: 1h
+  path: ./kubernetes/apps/smb/swisstransfer-import/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: smb
+  # A Job runs for hours; blocking the Kustomization on it would stall Flux.
+  wait: false

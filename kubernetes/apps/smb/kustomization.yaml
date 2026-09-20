@@ -9,3 +9,4 @@ components:
 resources:
   - ./namespace.yaml
   - ./samba/ks.yaml
+  - ./swisstransfer-import/ks.yaml
