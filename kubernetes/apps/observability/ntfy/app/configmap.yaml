@@ -1,0 +1,76 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntfy-templates
+data:
+  # Shadows ntfy's built-in template of the same name: named templates are read
+  # from the embedded filesystem first and only then from NTFY_TEMPLATE_DIR, so
+  # this file takes over without Alertmanager's webhook URL changing -- and an
+  # unreconciled ConfigMap degrades to the built-in rather than to a 400.
+  #
+  # This is a plain ConfigMap rather than an app-template `configMaps:` entry
+  # because that chart runs `tpl` over its data, so Helm evaluates the Go
+  # template below at render time:
+  #   execution error at (app-template/templates/common.yaml:14:3):
+  #   Unsupported Alertmanager status.
+  #
+  # Copied from upstream so the formatting is unchanged, with three additions.
+  #
+  # priority: the reason this file exists. A named template ignores the
+  # ?priority= query parameter entirely -- renderTemplateFromFile never
+  # receives it, only the inline "?template=yes" path does -- so a template's
+  # own priority key is the only way to vary it per alert. Resolved drops to 2
+  # so an all-clear cannot bypass Do Not Disturb.
+  #
+  # severity comes from commonLabels rather than the first alert because a
+  # group can mix severities; it is defaulted because a mixed group omits the
+  # label entirely, and comparing nil to a string is a template error, not a
+  # false.
+  #
+  # "Ends at" is printed only once resolved. Upstream guards it with
+  # `if .endsAt`, which is always true -- a firing alert carries the zero time
+  # as a non-empty string, so every notification ended with
+  # "Ends at: 0001-01-01T00:00:00Z". Instance and namespace are guarded for the
+  # same reason, having rendered as "<no value>".
+  alertmanager.yml: |-
+    title: |
+      {{- if eq .status "firing" }}
+      🚨 Alert: {{ (first .alerts).labels.alertname }}
+      {{- else if eq .status "resolved" }}
+      ✅ Resolved: {{ (first .alerts).labels.alertname }}
+      {{- else }}
+      {{ fail "Unsupported Alertmanager status." }}
+      {{- end }}
+    message: |
+      Status: {{ .status | title }}
+      Receiver: {{ .receiver }}
+
+      {{- range .alerts }}
+      Alert: {{ .labels.alertname }}
+      {{- if .labels.instance }}
+      Instance: {{ .labels.instance }}
+      {{- end }}
+      {{- if .labels.namespace }}
+      Namespace: {{ .labels.namespace }}
+      {{- end }}
+      Severity: {{ .labels.severity }}
+      Starts at: {{ .startsAt }}
+      {{- if eq .status "resolved" }}
+      Ends at: {{ .endsAt }}
+      {{- end }}
+      {{- if .annotations.summary }}
+      Summary: {{ .annotations.summary }}
+      {{- end }}
+      {{- if .annotations.description }}
+      Description: {{ .annotations.description }}
+      {{- end }}
+      Source: {{ .generatorURL }}
+
+      {{ end }}
+    priority: |
+      {{- if eq .status "resolved" }}2
+      {{- else if eq (.commonLabels.severity | default "") "critical" }}5
+      {{- else if eq (.commonLabels.severity | default "") "warning" }}4
+      {{- else }}3
+      {{- end }}
