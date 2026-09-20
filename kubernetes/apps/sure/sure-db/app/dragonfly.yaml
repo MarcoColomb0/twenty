@@ -16,5 +16,10 @@ spec:
   resources:
     requests:
       cpu: 50m
+      # Explicit, because an absent memory request is filled from the limit and
+      # scheduled as a reservation. The limit cannot come down any further --
+      # one proactor needs 256MiB of maxmemory, which is 80% of it -- so this
+      # is the only way to stop reserving 384Mi for a cache that uses 16Mi.
+      memory: 64Mi
     limits:
       memory: 384Mi
