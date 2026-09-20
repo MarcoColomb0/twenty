@@ -11,10 +11,18 @@ spec:
       namespace: smb
   interval: 1h
   path: ./kubernetes/apps/smb/swisstransfer-import/app
-  postBuild:
-    substituteFrom:
-      - name: cluster-secrets
-        kind: Secret
+  # No postBuild, deliberately, unlike every other Kustomization here. The Job
+  # carries a shell script, and Flux's envsubst rewrites ${...} across the
+  # whole manifest -- it does not know or care that these are shell variables:
+  #   post build failed for 'Job.v1.batch/swisstransfer-import': envsubst
+  #   error: variable substitution failed: variable not set (strict mode):
+  #   "SWISSFER_VERSION"
+  # Nothing here needs substitution -- there is no ${SECRET_DOMAIN} in the Job
+  # -- so the block is dropped rather than every variable escaped as $${...}.
+  # Decryption is unaffected: cluster-apps patches spec.decryption into every
+  # child Kustomization, which is what makes the SOPS secret readable.
+  #
+  # Adding substitution back means escaping every shell variable in job.yaml.
   prune: true
   sourceRef:
     kind: GitRepository
