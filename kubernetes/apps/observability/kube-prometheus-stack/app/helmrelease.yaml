@@ -266,10 +266,10 @@ spec:
             url: https://raw.githubusercontent.com/envoyproxy/gateway/v1.9.1/charts/gateway-addons-helm/dashboards/envoy-clusters.json
             datasource: Prometheus
           flux-performance:
-            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-performance.json
+            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.60.0/config/monitoring/dashboards/flux-performance.json
             datasource: Prometheus
           flux-k8s-api:
-            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.56.0/config/monitoring/dashboards/flux-k8s-api-performance.json
+            url: https://raw.githubusercontent.com/controlplaneio-fluxcd/flux-operator/v0.60.0/config/monitoring/dashboards/flux-k8s-api-performance.json
             datasource: Prometheus
           # crowdsecurity/grafana-dashboards publishes no tags, so these are
           # pinned to a commit instead. dashboards_v5 is the set that matches
