@@ -9,7 +9,7 @@ spec:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
   ref:
-    tag: 3.7.2
+    tag: 3.7.3
   # Codeberg, not ghcr.io -- upstream moved the project there and the
   # ghcr mirror stopped receiving releases at 3.7.2. It still resolves, so
   # nothing breaks; it simply never advertises another version again.
