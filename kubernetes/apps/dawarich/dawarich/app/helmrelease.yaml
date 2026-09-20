@@ -139,6 +139,15 @@ spec:
               OIDC_AUTO_REGISTER: "true"
               OIDC_PKCE_ENABLED: "true"
               OIDC_ISSUER: https://id.${SECRET_DOMAIN}
+              # Required, and not interchangeable with APPLICATION_HOSTS --
+              # that one is Rails host authorization. OidcConfig builds the
+              # callback from its own chain and falls back to a literal:
+              #   env.fetch('OIDC_REDIRECT_URI') do
+              #     base = env.fetch('APPLICATION_URL', 'http://localhost:3000')
+              # so with neither set Pocket ID is asked to authorize
+              # http://localhost:3000/... and rejects it as unregistered. This
+              # has to stay equal to the client's callbackUrls entry.
+              OIDC_REDIRECT_URI: https://dawarich.${SECRET_DOMAIN}/users/auth/openid_connect/callback
               OIDC_CLIENT_ID:
                 valueFrom:
                   secretKeyRef:
@@ -160,6 +169,23 @@ spec:
                   httpGet:
                     path: &health /api/v1/health
                     port: &port 3000
+                    # APPLICATION_PROTOCOL=https sets config.force_ssl, so a
+                    # plain probe is answered 301 to https://<pod-ip>:3000.
+                    # The kubelet follows that redirect and opens TLS against
+                    # Puma, which serves plaintext:
+                    #   Startup probe failed: http: server gave HTTP response
+                    #   to HTTPS client
+                    # and, from the other side of the same connection,
+                    #   Are you trying to open an SSL connection to a non-SSL
+                    #   Puma?
+                    # Declaring the scheme the proxy already terminated makes
+                    # request.ssl? true, so force_ssl passes the request
+                    # through instead of redirecting it. Setting the probe's
+                    # own scheme to HTTPS would not work -- Puma has no
+                    # certificate; it is Envoy that terminates TLS.
+                    httpHeaders: &probeHeaders
+                      - name: X-Forwarded-Proto
+                        value: https
                   initialDelaySeconds: 0
                   periodSeconds: 30
                   timeoutSeconds: 5
@@ -172,6 +198,7 @@ spec:
                   httpGet:
                     path: *health
                     port: *port
+                    httpHeaders: *probeHeaders
                   # Generous on purpose. This entrypoint runs db:migrate,
                   # data:migrate and db:seed before Puma binds, and the seed
                   # loads every country polygon into PostGIS on first boot.
