@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/postgresql.cnpg.io/cluster_v1.json
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-dawarich
+spec:
+  instances: 2
+  # PostGIS, not the stock image. Dawarich's schema declares it outright --
+  #   enable_extension "postgis"
+  # -- so this is not optional: on the default image every migration fails at
+  # the first one. Same shape as immich's vectorchord image.
+  imageName: ghcr.io/cloudnative-pg/postgis:17-3.5-9
+  # Years of location history at ~11k points to start. Small now, and it only
+  # grows in one direction, so the autoresizer does the work rather than a
+  # guess made today.
+  inheritedMetadata:
+    annotations:
+      resize.topolvm.io/storage_limit: 40Gi
+      resize.topolvm.io/threshold: 20%
+      resize.topolvm.io/increase: 20%
+  storage:
+    size: 10Gi
+    storageClass: longhorn
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  # Continuous WAL archiving. The ScheduledBackup takes base backups; this is
+  # what lets recovery land between them rather than only on one.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "dawarich"
+  bootstrap:
+    initdb:
+      database: dawarich
+      owner: dawarich
+      # CNPG's application user is not a superuser and CREATE EXTENSION needs
+      # one, so Rails cannot install these itself -- db:migrate would stop at
+      #   PG::InsufficientPrivilege: permission denied to create extension
+      # postInitApplicationSQL runs as superuser inside the application
+      # database, which is the only hook that fits. Both extensions come from
+      # db/schema.rb; plpgsql is already there by default.
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS postgis;
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto;
