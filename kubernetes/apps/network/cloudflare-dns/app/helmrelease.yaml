@@ -18,6 +18,25 @@ spec:
             name: &secret cloudflare-dns-secret
             key: api-token
     extraArgs:
+      # v0.22.0 moved the default annotation prefix from
+      # external-dns.alpha.kubernetes.io/ to external-dns.kubernetes.io/ with no
+      # fallback (kubernetes-sigs/external-dns#6424). The Gateway's target
+      # annotation was then silently ignored and every hostname was published as
+      # an A record to the gateway's LoadBalancer IP instead of a CNAME to the
+      # tunnel. Cloudflare rejected all of them -- "Target 192.168.100.102 is
+      # not allowed for a proxied record" -- which is the only reason this was
+      # a stalled reconcile rather than a zone full of unreachable addresses.
+      #
+      # Pinning the prefix rather than renaming the annotations, because they
+      # are not all external-dns's: k8s-gateway reads
+      # external-dns.alpha.kubernetes.io/hostname off Services to answer LAN
+      # queries, and hardcodes that string as a constant -- it did not follow
+      # the GA rename. external-dns here only reads `target` and `controller`
+      # (Gateways and HTTPRoutes) and `cloudflare-proxied` (DNSEndpoints);
+      # every `hostname` annotation in this repository belongs to k8s-gateway.
+      # Renaming the set would split one convention across two prefixes and
+      # break split DNS for anything relying on the Service annotations.
+      - --annotation-prefix=external-dns.alpha.kubernetes.io/
       - --cloudflare-dns-records-per-page=1000
       - --cloudflare-proxied
       - --crd-source-apiversion=externaldns.k8s.io/v1alpha1
@@ -25,10 +44,13 @@ spec:
       - --gateway-name=envoy-external
     triggerLoopOnEvent: true
     policy: sync
-    sources: ["crd", "gateway-httproute"]
+    sources:
+      - "crd"
+      - "gateway-httproute"
     txtPrefix: k8s.
     txtOwnerId: default
-    domainFilters: ["${SECRET_DOMAIN}"]
+    domainFilters:
+      - "${SECRET_DOMAIN}"
     serviceMonitor:
       enabled: true
     podAnnotations:
