@@ -8,5 +8,4 @@ resources:
   - ./recurringjob-snapshot-cleanup.yaml
   - ./helmrepository.yaml
   - ./httproute.yaml
-  - ./dnsendpoint.yaml
   - ./networkpolicy.yaml
