@@ -1,0 +1,261 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dawarich
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: dawarich
+  interval: 1h
+  values:
+    controllers:
+      dawarich:
+        # Rails and Sidekiq share /var/app/storage -- Active Storage writes an
+        # uploaded Takeout archive from the web request and the worker reads it
+        # back -- so they are two containers in one pod rather than two
+        # Deployments. A ReadWriteOnce Longhorn volume could not be mounted by
+        # both otherwise, and this cluster deliberately has no RWX.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        initContainers:
+          # Ruby's Dir.tmpdir refuses a world-writable directory with no sticky
+          # bit and aborts the boot before any of the app loads:
+          #   system temporary path is world-writable: /tmp
+          # An emptyDir is created 0777 owned by root, so it fails that test,
+          # and a container running as 1000 cannot chmod +t a directory root
+          # owns. A subdirectory it creates itself is 0700 and owned by 1000,
+          # which passes -- hence TMPDIR below pointing at it. Same fix as sure.
+          init-tmp:
+            image: &image
+              repository: docker.io/freikin/dawarich
+              tag: 1.14.5
+            command:
+              - "sh"
+              - "-c"
+              - "mkdir -p /tmp/ruby && chmod 700 /tmp/ruby"
+            securityContext: &securityContext
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+        containers:
+          app:
+            image: *image
+            # The image's own entrypoint, which is what runs db:migrate,
+            # data:migrate and db:seed before handing off to Puma. Nothing
+            # migrates in an init container here because the worker's
+            # entrypoint only waits for Postgres -- it never migrates -- so the
+            # two cannot race the way they would if both prepared the schema.
+            command:
+              - "web-entrypoint.sh"
+            args:
+              - "bin/rails"
+              - "server"
+              - "-p"
+              - "3000"
+              - "-b"
+              - "::"
+            env: &env
+              RAILS_ENV: production
+              SELF_HOSTED: "true"
+              RAILS_LOG_TO_STDOUT: "true"
+              TIME_ZONE: Europe/Rome
+              DISTANCE_UNIT: km
+              # See the comment on init-tmp.
+              TMPDIR: /tmp/ruby
+              # Envoy terminates TLS and talks plaintext to the pod, so the app
+              # has to be told the outside scheme or it builds http:// URLs and
+              # non-secure cookies.
+              APPLICATION_PROTOCOL: https
+              APPLICATION_HOSTS: "dawarich.${SECRET_DOMAIN}"
+              DOMAIN: "dawarich.${SECRET_DOMAIN}"
+              # One preloaded Puma worker is plenty for a household instance
+              # and halves idle memory.
+              WEB_CONCURRENCY: "1"
+              # Addresses are stored once resolved, so a point is geocoded a
+              # single time rather than on every view. That matters directly
+              # here: the free chibigeo tier is 2500 requests/day.
+              STORE_GEODATA: "true"
+              DATABASE_HOST: postgres-dawarich-rw
+              DATABASE_PORT: "5432"
+              # Database 0; nothing else shares this Dragonfly.
+              REDIS_URL: redis://dawarich-dragonfly:6379/0
+              DATABASE_NAME:
+                valueFrom:
+                  secretKeyRef:
+                    name: &pg postgres-dawarich-app
+                    key: dbname
+              DATABASE_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    name: *pg
+                    key: username
+              DATABASE_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: *pg
+                    key: password
+
+              # -- Reverse geocoding ------------------------------------------
+              #
+              # chibigeo, a Photon-compatible hosted service. Self-hosted
+              # Photon was the alternative and is not viable here: worldwide
+              # coverage means the planet index, which upstream puts at 95GB of
+              # disk and 64GB of RAM. Country extracts would fit but only cover
+              # one country, and the Italy one has not been rebuilt since
+              # 2025-07-21.
+              #
+              # PHOTON_API_KEY is deliberately absent from this file and comes
+              # from the Secret below. Until it is set, geocoding is simply off
+              # and nothing breaks -- points keep their coordinates and the
+              # nightly job scopes on Point.not_reverse_geocoded, so whenever
+              # the key appears it backfills everything already stored.
+              #
+              # At 2500 requests/day the initial ~11k points take about five
+              # days to work through. That is a one-off; day-to-day tracking
+              # sits far below the cap.
+              PHOTON_API_HOST: app.chibigeo.com/v1/photon
+              PHOTON_API_USE_HTTPS: "true"
+
+              # -- SSO --------------------------------------------------------
+              #
+              # Local registration is closed, so Pocket ID is the only way to
+              # get an account. It is NOT the only way to log in: db/seeds.rb
+              # creates demo@dawarich.app with a published password and admin
+              # rights whenever the users table is empty, and that form stays
+              # on the login page. Changing those credentials is the first
+              # thing to do after the first boot, and the reason this route
+              # points at the internal gateway for now -- see route below.
+              #
+              # OIDC_AUTO_REGISTER has to stay true until an account exists.
+              # from_omniauth returns nil for an unknown identity when it is
+              # false, and the matching-email path wants a link-verification
+              # mail this cluster has no SMTP to send, so with it false and no
+              # account there is no way in at all. Flip it to false once the
+              # account is created -- allowedUserGroups on the client is what
+              # holds the line meanwhile.
+              ALLOW_EMAIL_PASSWORD_REGISTRATION: "false"
+              OIDC_AUTO_REGISTER: "true"
+              OIDC_PKCE_ENABLED: "true"
+              OIDC_ISSUER: https://id.${SECRET_DOMAIN}
+              OIDC_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: &oidc dawarich-oidc
+                    key: client_id
+              OIDC_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: *oidc
+                    key: client_secret
+            envFrom: &envFrom
+              - secretRef:
+                  name: dawarich-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: &health /api/v1/health
+                    port: &port 3000
+                  initialDelaySeconds: 0
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: *health
+                    port: *port
+                  # Generous on purpose. This entrypoint runs db:migrate,
+                  # data:migrate and db:seed before Puma binds, and the seed
+                  # loads every country polygon into PostGIS on first boot.
+                  initialDelaySeconds: 15
+                  periodSeconds: 10
+                  failureThreshold: 60
+            securityContext: *securityContext
+            resources:
+              requests:
+                cpu: 100m
+                memory: 384Mi
+              limits:
+                memory: 1Gi
+          worker:
+            image: *image
+            # Its own entrypoint waits for Postgres and then execs sidekiq; the
+            # command is ignored, so there is nothing to pass.
+            command:
+              - "sidekiq-entrypoint.sh"
+            env: *env
+            envFrom: *envFrom
+            # Sidekiq serves no HTTP, so there is nothing to probe. Its health
+            # is whether jobs drain, which nothing here can see -- a dead
+            # worker is silent.
+            securityContext: *securityContext
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 768Mi
+    defaultPodOptions:
+      securityContext:
+        # The image can drop privileges itself via PUID/PGID, but only by
+        # starting as root and chown-ing on the way past. Starting as 1000
+        # outright skips that branch entirely, and fsGroup is what makes the
+        # mounted claim writable without it.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+    persistence:
+      storage:
+        existingClaim: dawarich-storage
+        globalMounts:
+          - path: /var/app/storage
+      # Rebuilt from the image on every boot by the entrypoint, so it must be
+      # writable but must not persist. See pvc.yaml.
+      public:
+        type: emptyDir
+        globalMounts:
+          - path: /var/app/public
+      # Puma's pidfile, Rails' cache, and the watched-imports directory.
+      app-tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /var/app/tmp
+      # What Ruby's Dir.tmpdir resolves to, checked at boot before the app
+      # loads. Separate from /var/app/tmp and both are needed.
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port
+    route:
+      app:
+        hostnames:
+          - "dawarich.${SECRET_DOMAIN}"
+        parentRefs:
+          # Internal until the seeded demo@dawarich.app admin is dealt with.
+          # db/seeds.rb creates it with a password published in the repository
+          # whenever the users table is empty, and ALLOW_EMAIL_PASSWORD_
+          # REGISTRATION only closes signup, not that login form. Publishing
+          # this before the credential is changed would put a known admin
+          # account on the internet. Move to envoy-external after.
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port

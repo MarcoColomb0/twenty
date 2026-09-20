@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/dragonflydb.io/dragonfly_v1alpha1.json
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dawarich-dragonfly
+spec:
+  replicas: 1
+  args:
+    # One thread, matching the others. Dragonfly reserves 256MiB per proactor
+    # and refuses to start when maxmemory (80% of the limit) cannot cover them
+    # all. Sidekiq uses this as a job queue, not a data store.
+    - --proactor_threads=1
+    - --default_lua_flags=allow-undeclared-keys
+    - --cluster_mode=emulated
+  resources:
+    requests:
+      cpu: 50m
+      # Explicit, because an absent memory request is filled from the limit and
+      # scheduled as a reservation -- and the limit cannot come down, since one
+      # proactor needs 256MiB of maxmemory, which is 80% of it.
+      memory: 64Mi
+    limits:
+      memory: 384Mi

@@ -1,0 +1,26 @@
+---
+# /var/app/storage -- Active Storage. Uploaded Google Takeout archives, GPX and
+# .fit files land here, and both the Rails container and the Sidekiq worker
+# read and write them, which is why they share one pod.
+#
+# Deliberately the only PersistentVolumeClaim here. /var/app/public looks like
+# it wants one -- upstream gives it a named volume -- but the entrypoint
+# rebuilds it from the image on every boot:
+#   rm -rf $APP_PATH/public/assets
+#   cp -r "$ASSETS_DIST"/* $APP_PATH/public/
+# so persisting it would only preserve assets from an older image.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dawarich-storage
+  annotations:
+    resize.topolvm.io/storage_limit: 30Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi

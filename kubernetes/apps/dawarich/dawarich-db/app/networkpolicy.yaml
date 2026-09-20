@@ -1,0 +1,24 @@
+---
+# A podSelector with no namespaceSelector matches only pods in this namespace,
+# so this admits the Dawarich pod -- which is both the Rails web container and
+# the Sidekiq worker -- and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dawarich-dragonfly-allow-app
+spec:
+  podSelector:
+    matchLabels:
+      app: dawarich-dragonfly
+      app.kubernetes.io/name: dragonfly
+      app.kubernetes.io/part-of: dragonfly
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dawarich
+      ports:
+        - port: 6379
+          protocol: TCP
+  policyTypes:
+    - Ingress
