@@ -121,22 +121,26 @@ spec:
               # -- SSO --------------------------------------------------------
               #
               # Local registration is closed, so Pocket ID is the only way to
-              # get an account. It is NOT the only way to log in: db/seeds.rb
-              # creates demo@dawarich.app with a published password and admin
-              # rights whenever the users table is empty, and that form stays
-              # on the login page. Changing those credentials is the first
-              # thing to do after the first boot, and the reason this route
-              # points at the internal gateway for now -- see route below.
+              # get an account.
               #
-              # OIDC_AUTO_REGISTER has to stay true until an account exists.
-              # from_omniauth returns nil for an unknown identity when it is
-              # false, and the matching-email path wants a link-verification
-              # mail this cluster has no SMTP to send, so with it false and no
-              # account there is no way in at all. Flip it to false once the
-              # account is created -- allowedUserGroups on the client is what
-              # holds the line meanwhile.
+              # OIDC_AUTO_REGISTER had to start true: from_omniauth returns nil
+              # for an unknown identity when it is false, and the
+              # matching-email path wants a link-verification mail this cluster
+              # has no SMTP to send, so with it false and no account there was
+              # no way in at all. The account now exists and is linked, so this
+              # is closed -- an identity Pocket ID lets through but that has no
+              # user here is refused rather than given one.
+              #
+              # db/seeds.rb creates demo@dawarich.app with a password published
+              # upstream whenever the users table is empty, and
+              # ALLOW_EMAIL_PASSWORD_REGISTRATION does not cover that login
+              # form. It is gone -- verified as zero rows before this route was
+              # published -- but the seed runs on every boot, so should the
+              # users table ever be emptied it comes straight back on a public
+              # URL. Restoring this database from a backup means checking for
+              # it again.
               ALLOW_EMAIL_PASSWORD_REGISTRATION: "false"
-              OIDC_AUTO_REGISTER: "true"
+              OIDC_AUTO_REGISTER: "false"
               OIDC_PKCE_ENABLED: "true"
               OIDC_ISSUER: https://id.${SECRET_DOMAIN}
               # Required, and not interchangeable with APPLICATION_HOSTS --
@@ -273,13 +277,12 @@ spec:
         hostnames:
           - "dawarich.${SECRET_DOMAIN}"
         parentRefs:
-          # Internal until the seeded demo@dawarich.app admin is dealt with.
-          # db/seeds.rb creates it with a password published in the repository
-          # whenever the users table is empty, and ALLOW_EMAIL_PASSWORD_
-          # REGISTRATION only closes signup, not that login form. Publishing
-          # this before the credential is changed would put a known admin
-          # account on the internet. Move to envoy-external after.
-          - name: envoy-internal
+          # Public. A phone posting points has to reach this from anywhere, so
+          # the internal gateway would mean tracking only while on the tailnet.
+          # The gate is Pocket ID plus allowedUserGroups, with local
+          # registration closed and OIDC auto-registration off -- see the SSO
+          # block above for why the order mattered.
+          - name: envoy-external
             namespace: network
             sectionName: https
         rules:
