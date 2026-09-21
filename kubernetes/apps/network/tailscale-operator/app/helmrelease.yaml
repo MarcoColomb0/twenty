@@ -28,7 +28,8 @@ spec:
         requests:
           cpu: 10m
         limits:
-          memory: 256Mi
+          # 7d peak 57Mi.
+          memory: 192Mi
     proxyConfig:
       image:
         repository: ghcr.io/tailscale/tailscale

@@ -35,4 +35,5 @@ spec:
           requests:
             cpu: 25m
           limits:
-            memory: 256Mi
+            # 7d peak 54Mi across both subnet routers.
+            memory: 192Mi

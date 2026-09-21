@@ -59,7 +59,8 @@ spec:
             resources:
               requests:
                 cpu: 10m
-                memory: 256Mi
+                # 7d peak 86Mi.
+                memory: 192Mi
               limits:
                 memory: 768Mi
       web:

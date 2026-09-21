@@ -56,7 +56,9 @@ spec:
               requests:
                 cpu: 10m
               limits:
-                memory: 256Mi
+                # 7d peak 45Mi across both replicas. An absent memory request
+                # is filled from the limit, so this is the reservation too.
+                memory: 160Mi
     defaultPodOptions:
       topologySpreadConstraints:
         - maxSkew: 1

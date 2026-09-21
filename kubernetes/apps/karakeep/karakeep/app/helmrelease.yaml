@@ -140,7 +140,10 @@ spec:
             resources:
               requests:
                 cpu: 50m
-                memory: 256Mi
+                # 7d peak 77Mi. The limit stays where it is -- headless Chrome
+                # is spiky by nature, and a limit is a ceiling; only the
+                # request is scheduled.
+                memory: 192Mi
               limits:
                 memory: 768Mi
           meilisearch:
@@ -160,7 +163,8 @@ spec:
             resources:
               requests:
                 cpu: 50m
-                memory: 256Mi
+                # 7d peak 48Mi.
+                memory: 128Mi
               limits:
                 memory: 768Mi
     defaultPodOptions:
