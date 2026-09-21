@@ -1,0 +1,35 @@
+---
+# This route exists to make Envoy Gateway materialise a cluster for Sablier,
+# not to publish it.
+#
+# The Wasm plugin reaches Sablier with dispatch_http_call, which takes an
+# Envoy *cluster name* rather than a hostname. Envoy Gateway only builds
+# clusters for backends some route references, so without this the call fails:
+#   dipatch httpcall failed: error status returned by host: bad argument
+# and the generated name is what the policy's `cluster` field has to match:
+#   httproute/network/sablier/rule/0
+#
+# The path match is deliberately something nothing serves. dispatch_http_call
+# goes straight to the cluster and never traverses the listener or this route,
+# so narrowing it costs nothing and keeps Sablier's API -- which can stop and
+# start workloads, with no authentication of its own -- off the LAN. Internal
+# gateway as well, for the same reason.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sablier
+spec:
+  hostnames:
+    - "sablier.${SECRET_DOMAIN}"
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /__cluster-anchor
+      backendRefs:
+        - name: sablier
+          port: 10000
