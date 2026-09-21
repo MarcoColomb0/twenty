@@ -12,12 +12,13 @@ spec:
     controllers:
       collabora:
         # Same Sablier group as oxicloud -- see the comment there for why the
-        # two cannot be woken independently.
+        # two cannot be woken independently, and why these are the legacy
+        # `sablier.*` keys rather than the documented `sablierapp.dev/*` ones.
         labels:
-          sablierapp.dev/enable: "true"
+          sablier.enable: "true"
+          sablier.group: oxicloud
         annotations:
           reloader.stakater.com/auto: "true"
-          sablierapp.dev/group: oxicloud
         containers:
           app:
             image:
