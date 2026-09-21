@@ -6,6 +6,7 @@ components:
   - ../../../../components/volsync
 
 resources:
+  - ./envoyextensionpolicy.yaml
   - ./helmrelease.yaml
   - ./ocirepository.yaml
   - ./oidcclient.yaml

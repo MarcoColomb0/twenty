@@ -14,8 +14,19 @@ spec:
         # One ReadWriteOnce volume holding the blob store, so two pods cannot
         # run at once and a rolling update would deadlock on the attach.
         strategy: Recreate
+        # Opted in to Sablier. On Kubernetes `enable` has to be a label
+        # because discovery uses a label selector, while `group` has to be an
+        # annotation -- they are not interchangeable.
+        #
+        # Both this and collabora share one group: the WOPI call from oxicloud
+        # to collabora is server-to-server inside the cluster and never passes
+        # the gateway, so collabora could never be woken by opening a document.
+        # Sharing the group means reaching drive.${SECRET_DOMAIN} starts both.
+        labels:
+          sablierapp.dev/enable: "true"
         annotations:
           reloader.stakater.com/auto: "true"
+          sablierapp.dev/group: oxicloud
         containers:
           app:
             image:

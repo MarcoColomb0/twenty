@@ -1,0 +1,53 @@
+---
+# Cluster-scoped because the workloads Sablier scales live in other namespaces
+# (oxicloud today). Deliberately narrow: read workloads, and write only their
+# scale subresource. It cannot edit a Deployment's spec, only its replica
+# count, so a compromised Sablier can stop and start things but not change what
+# they run.
+#
+# statefulsets are included because the same policy will cover one eventually;
+# CloudNativePG hibernation is NOT granted -- the databases stay up by design.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sablier
+rules:
+  - apiGroups:
+      - "apps"
+    resources:
+      - "deployments"
+      - "statefulsets"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups:
+      - "apps"
+    resources:
+      - "deployments/scale"
+      - "statefulsets/scale"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+      - "update"
+      - "patch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sablier
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sablier
+subjects:
+  # app-template renders this ServiceAccount itself, so it is not declared
+  # here -- two managers of one object would fight. The controller references
+  # it by name rather than letting the chart generate a derived one, because
+  # this binding has to name something whose name cannot move: the chart names
+  # service accounts after the release, the same way it names Services, and
+  # that has shifted underneath this repository before.
+  - kind: ServiceAccount
+    name: sablier
+    namespace: network
