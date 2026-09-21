@@ -5,8 +5,8 @@
 # count, so a compromised Sablier can stop and start things but not change what
 # they run.
 #
-# statefulsets are included because the same policy will cover one eventually;
-# CloudNativePG hibernation is NOT granted -- the databases stay up by design.
+# statefulsets are included because the same policy will cover one eventually.
+# CloudNativePG Clusters are readable but not patchable -- see below.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -32,6 +32,24 @@ rules:
       - "watch"
       - "update"
       - "patch"
+  # Read-only, and not optional despite upstream documenting this block as
+  # "only required if you manage CloudNativePG Clusters". 1.18.0 lists them
+  # unconditionally during the startup group scan, and being denied aborts the
+  # whole scan rather than skipping that provider, so oxicloud and collabora
+  # were never discovered either.
+  #
+  # `patch` is withheld deliberately: that is the verb Sablier uses to toggle
+  # the CNPG hibernation annotation, so without it the databases cannot be put
+  # to sleep even by mistake -- which is the point of scaling only the frontend
+  # and Collabora. Enumerating them is enough.
+  - apiGroups:
+      - "postgresql.cnpg.io"
+    resources:
+      - "clusters"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
