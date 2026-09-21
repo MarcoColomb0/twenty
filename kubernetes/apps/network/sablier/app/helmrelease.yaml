@@ -56,6 +56,15 @@ spec:
               limits:
                 memory: 128Mi
     defaultPodOptions:
+      # app-template defaults this to false, which is right for an app that
+      # never calls the API and wrong here -- Sablier's whole job is scaling
+      # Deployments. Without it the pod has no token and exits at startup:
+      #   cannot setup provider: open
+      #   /var/run/secrets/kubernetes.io/serviceaccount/token:
+      #   no such file or directory
+      # printing its full usage text underneath, which reads like a bad flag
+      # rather than a missing mount.
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
