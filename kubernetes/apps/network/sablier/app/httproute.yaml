@@ -9,20 +9,32 @@
 # and the generated name is what the policy's `cluster` field has to match:
 #   httproute/network/sablier/rule/0
 #
-# The path match is deliberately something nothing serves. dispatch_http_call
-# goes straight to the cluster and never traverses the listener or this route,
-# so narrowing it costs nothing and keeps Sablier's API -- which can stop and
-# start workloads, with no authentication of its own -- off the LAN. Internal
-# gateway as well, for the same reason.
+# It attaches to BOTH gateways because a cluster only exists on the proxy whose
+# route references it, and dispatch_http_call resolves within the proxy running
+# the filter. drive.${SECRET_DOMAIN} is on envoy-external while collabora's
+# route is on envoy-internal, so the policy runs on both and both need the
+# cluster. Attached to one, the other still fails with `bad argument`.
+#
+# The path match is deliberately something nothing serves, and external-dns is
+# told to ignore the route so attaching to the public gateway publishes no
+# record. dispatch_http_call goes straight to the cluster and never traverses
+# the listener or this route, so neither restriction costs anything -- and
+# Sablier's API, which can stop and start workloads with no authentication of
+# its own, stays unreachable from outside.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: sablier
+  annotations:
+    external-dns.alpha.kubernetes.io/controller: none
 spec:
   hostnames:
     - "sablier.${SECRET_DOMAIN}"
   parentRefs:
     - name: envoy-internal
+      namespace: network
+      sectionName: https
+    - name: envoy-external
       namespace: network
       sectionName: https
   rules:
