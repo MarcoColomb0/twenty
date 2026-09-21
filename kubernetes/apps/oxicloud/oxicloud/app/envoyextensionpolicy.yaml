@@ -1,0 +1,52 @@
+---
+# Scale-to-zero on idle, woken by real traffic.
+#
+# The filter is attached to both routes on purpose. Only drive.${SECRET_DOMAIN}
+# needs it to *start* the group, but collabora's route has to carry it too:
+# while a document is open the browser talks to collabora and not to oxicloud,
+# and it is requests through this filter that refresh the session. Without it
+# an edit lasting longer than the session would have both scaled away
+# underneath the user.
+#
+# Nothing else can keep the group awake, which is the point. Kubelet probes go
+# straight to the pod IP and Prometheus scrapes the pod directly, so neither
+# passes through Envoy. oxicloud has no Gatus endpoint either -- one would have
+# held it open forever.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: oxicloud-sablier
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: oxicloud
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: collabora
+  wasm:
+    - name: sablier
+      # Fetched at config load and pinned by digest, so a replaced release
+      # asset fails closed rather than running something else on the gateway.
+      # Verified against the published checksums.txt.
+      code:
+        type: HTTP
+        http:
+          url: https://github.com/sablierapp/sablier-proxywasm-plugin/releases/download/v1.1.0/sablier-proxywasm-plugin.wasm
+          sha256: 1682802d2c53023bba032e8a50a3af9bca0b4d2233c1a7ed476340a6be0a83f1
+      # If the module cannot be fetched or initialised, pass the request
+      # through instead of returning 5xx. The failure it protects against is
+      # GitHub being unreachable when Envoy reloads; in that case a request
+      # reaches a backend that may be scaled to zero and gets a 503, which is
+      # the same thing the user would see anyway -- but it keeps a broken
+      # fetch from turning into a filter that rejects traffic outright.
+      failOpen: true
+      config:
+        sablier_url: sablier.network.svc.cluster.local:10000
+        group: oxicloud
+        # Idle window before both are scaled away. Refreshed by every request
+        # through this filter.
+        session_duration: 2h
+        dynamic:
+          display_name: OxiCloud
+          theme: retro
