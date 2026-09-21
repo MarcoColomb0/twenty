@@ -46,7 +46,12 @@ spec:
               requests:
                 cpu: 25m
               limits:
-                memory: 512Mi
+                # Raised from 512Mi, where all three replicas were OOMKilled 30
+                # times each in a week. The 7d peak read 511Mi, but that number
+                # is the limit clipping the workload rather than its demand.
+                # The denylists dominate and do not shrink; bounding the cache
+                # above is what makes this a ceiling rather than a countdown.
+                memory: 768Mi
 
     defaultPodOptions:
       securityContext:
@@ -167,7 +172,15 @@ spec:
             caching:
               minTime: 5m
               maxTime: 30m
+              # Both of these default to 0, which means unlimited, and that is
+              # what was killing this pod: the denylists below are already
+              # several hundred MB resident (tif.txt alone is 52MB of text),
+              # so an unbounded cache on top of them reached the memory limit
+              # and each replica was OOMKilled roughly four times a day.
+              # Soft limits, so entries are evicted rather than queries failed.
+              maxItemsCount: 25000
               prefetching: true
+              prefetchMaxItemsCount: 2000
 
             prometheus:
               enable: true

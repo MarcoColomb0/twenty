@@ -64,7 +64,8 @@ spec:
         requests:
           cpu: 10m
         limits:
-          memory: 256Mi
+          # 7d peak 60Mi.
+          memory: 192Mi
 
     prometheus:
       prometheusSpec:
@@ -343,7 +344,8 @@ spec:
         requests:
           cpu: 10m
         limits:
-          memory: 256Mi
+          # 7d peak 49Mi.
+          memory: 160Mi
 
     prometheus-node-exporter:
       resources:
