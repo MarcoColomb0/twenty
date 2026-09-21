@@ -182,6 +182,25 @@ spec:
               prefetching: true
               prefetchMaxItemsCount: 2000
 
+            # Shared cache across the three replicas. Without this each one
+            # keeps its own, so a client that the LoadBalancer sends to a
+            # different replica than last time misses and pays a full upstream
+            # round trip -- with three replicas roughly two thirds of the
+            # warm answers were unreachable to any given query.
+            #
+            # Reads stay in-process: the Redis layer is a decorator over the
+            # local cache that replicates entries over a pub/sub channel, so
+            # nothing is added to the resolve path. Writes go through a bounded
+            # send buffer that drops rather than blocks, which is why a slow or
+            # full cache cannot stall a query.
+            #
+            # required is false on purpose, and it is the default: Dragonfly
+            # being down has to degrade to local caching, never stop DNS. The
+            # whole house resolves through here, including the tailnet.
+            redis:
+              address: blocky-dragonfly:6379
+              required: false
+
             prometheus:
               enable: true
               path: /metrics

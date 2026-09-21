@@ -1,0 +1,24 @@
+---
+# A podSelector with no namespaceSelector matches only pods in this namespace,
+# so this admits blocky and nothing else. The cache holds every name the house
+# has resolved, which is a browsing history in all but name.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: blocky-dragonfly-allow-app
+spec:
+  podSelector:
+    matchLabels:
+      app: blocky-dragonfly
+      app.kubernetes.io/name: dragonfly
+      app.kubernetes.io/part-of: dragonfly
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: blocky
+      ports:
+        - port: 6379
+          protocol: TCP
+  policyTypes:
+    - Ingress
