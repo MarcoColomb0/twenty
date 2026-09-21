@@ -4,6 +4,13 @@ kind: Kustomization
 metadata:
   name: blocky
 spec:
+  dependsOn:
+    # The shared DNS cache is a Dragonfly CR, so its operator has to exist
+    # before this applies. blocky itself does not wait on it -- redis.required
+    # is false, so a missing cache degrades to per-replica local caches rather
+    # than taking LAN DNS down.
+    - name: dragonfly-operator
+      namespace: database
   interval: 1h
   path: ./kubernetes/apps/network/blocky/app
   postBuild:
