@@ -1,12 +1,6 @@
-<div align="center">
-
 # twenty
 
-_A home Kubernetes cluster on Talos Linux, managed entirely through Git._
-
-</div>
-
-<div align="center">
+_[Flux CD](https://fluxcd.io/) (Talos Linux) + [doco-cd](https://doco.cd/latest/) (Docker)_
 
 ![Talos](https://kromgo.marco.wf/badges/talos_version)
 ![Kubernetes](https://kromgo.marco.wf/badges/kubernetes_version)
@@ -22,59 +16,33 @@ _A home Kubernetes cluster on Talos Linux, managed entirely through Git._
 ![Volumes](https://kromgo.marco.wf/badges/longhorn_volume_count)
 ![Disk Used](https://kromgo.marco.wf/badges/longhorn_capacity_used)
 
-</div>
-
 ---
 
-## 🍼 Overview
+## hardware
 
-Three Talos nodes, all control plane, all schedulable. [Flux](https://fluxcd.io) reconciles
-everything in this repository into the cluster — including DNS records, TLS certificates and OIDC
-clients. Nothing is applied by hand, and anything that cannot be committed in the clear is encrypted
-with SOPS and age.
+| node | kind | memory | role |
+|---|---|---|---|
+| `twenty-lp01` | LattePanda IOTA, Intel N150 | 16GB | Control plane + workloads |
+| `twenty-hp01` | HP ProDesk 400 G4, Intel i5-8500T | 16GB | Control plane + workloads |
+| `twenty-asus01` | ASUS PN52, Ryzen 5 4500U | 16GB | Control plane + workloads |
 
-One thing lives outside the cluster: a small Oracle ARM box runs an Ollama endpoint for Karakeep's
-tagging. It is declared here too, under `docker/`, and deployed by doco-cd from the same commits —
-Flux reconciles `kubernetes/`, doco-cd reconciles `docker/`, and neither looks at the other's path.
+### secondary hardware
+| node | kind | memory | role |
+|---|---|---|---|
+| `twenty-pi01` | Raspberry PI 4 | 4GB | S3 target for PVCs/Postgres WAL |
+| `twenty-ai01` | Oracle Ampere A1 | 12GB | AI box based running ollama hosted @ Oracle Cloud |
 
-The numbers above are queried from the cluster's own Prometheus and rendered by
-[Kromgo](https://github.com/home-operations/kromgo). They are real, and they update on their own.
-
-| CPU | Memory |
+## quick stats
+| cpu | memory |
 |---|---|
 | ![CPU usage](https://kromgo.marco.wf/graphs/cluster_cpu?last=24h) | ![Memory usage](https://kromgo.marco.wf/graphs/cluster_memory?last=24h) |
 
-| Running pods | Network throughput |
+| running pods | network throughput |
 |---|---|
 | ![Running pods](https://kromgo.marco.wf/graphs/cluster_pods?last=24h) | ![Network throughput](https://kromgo.marco.wf/graphs/cluster_network?last=24h) |
 
-## 🔧 Hardware
-
-| Node | Address | Kind | Role |
-|---|---|---|---|
-| `twenty-lp01` | `192.168.100.201` | LattePanda N150, bare metal | Control plane + workloads |
-| `twenty-hp01` | `192.168.100.202` | HP mini PC, i5-8500T | Control plane + workloads |
-| `twenty-asus01` | `192.168.100.203` | ASUS PN50, Ryzen | Control plane + workloads |
-
-The API server sits behind a shared VIP at `192.168.100.100`.
-
-Every node is its own physical box. It used to run four, but `twenty-01` and `twenty-virt01` were both
-VMs on a single LattePanda — Longhorn spreads replicas across *nodes* and cannot know that, so "two
-healthy replicas" could still mean one machine. That stopped being theoretical when the host took two
-of the four control plane nodes down at once. The pair was retired and the LattePanda rebuilt as a
-single bare-metal node, which is `twenty-lp01`.
-
-Three etcd members means a quorum of two, so one node can be lost without stopping the API, and
-Longhorn always has a third node to rebuild a replica onto. Both of those were briefly untrue while
-the cluster sat at two nodes, and the two-of-two window is worth avoiding — losing either box took the
-API down outright rather than degrading it.
-
-`twenty-hp01` and `twenty-lp01` both have Intel iGPUs and carry the label the Intel GPU device plugin
-selects on; Immich transcodes on that. The AMD iGPU in `twenty-asus01` needs a different device plugin
-and is not yet exposed.
-
-## 🖥️ Technology Stack
-
+## hosted services
+### system
 |   | Name | Purpose |
 |---|---|---|
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/talos.svg"> | [Talos Linux](https://www.talos.dev) | Immutable, API-driven OS. No SSH, no shell, no package manager. |
@@ -104,7 +72,7 @@ and is not yet exposed.
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/reloader.svg"> | [Reloader](https://github.com/stakater/Reloader) | Restarts workloads when their ConfigMaps or Secrets change. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes-dashboard.svg"> | [Intel device plugins](https://github.com/intel/intel-device-plugins-for-kubernetes) | Advertises the Intel iGPUs on `twenty-hp01` and `twenty-lp01` as `gpu.intel.com/i915`. A `hostPath` mount is not enough: it shows the render node to the container but never grants the device cgroup entry. |
 
-## 📦 Applications
+### apps
 
 |   | Name | Notes |
 |---|---|---|
@@ -119,7 +87,7 @@ and is not yet exposed.
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/it-tools.svg"> | [IT-Tools](https://github.com/CorentinTh/it-tools) | Offline developer utilities — encoders, converters, generators. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/kubernetes.svg"> | echo | Trivial HTTP echo service, used to verify ingress and DNS end to end. |
 
-## 🔑 Identity
+### identity
 
 | Component | Purpose |
 |---|---|
@@ -134,7 +102,7 @@ Grafana has no login form at all: Pocket ID is the only way in through a browser
 Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
 auth, which is the way back in if Pocket ID is unreachable.
 
-## 🛡️ Security
+### security
 
 | Component | Purpose |
 |---|---|
@@ -160,7 +128,7 @@ than a Cloudflare one. AppSec is evaluated in the bouncer instead of the parsers
 guard: the bouncer exempts the same private ranges. The `SecurityPolicy` also sets `failOpen`, so a
 bouncer that is down costs remediation and not the gateway.
 
-## 📊 Observability
+### metrics
 
 Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,
 cert-manager, Blocky, Pocket ID, and CrowdSec — the agent on every node, plus AppSec, the LAPI and
@@ -175,7 +143,7 @@ at all, so Pocket ID is the only way in, and the external gateway puts it behind
 and AppSec like everything else out there. Kromgo is public too, because GitHub has to be able to
 fetch the badges on this page.
 
-## 💾 Backups
+### backups
 
 Backups run to a [rustfs](https://rustfs.com) S3 endpoint on a Raspberry Pi 4 on the LAN.
 
