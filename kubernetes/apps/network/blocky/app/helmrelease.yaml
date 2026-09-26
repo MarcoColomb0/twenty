@@ -160,7 +160,26 @@ spec:
                   - main
               blockType: zeroIp
               loading:
-                refreshPeriod: 4h
+                # 24h, not 4h. Each replica re-downloads every list in full on
+                # every refresh -- there is no conditional GET and no sharing
+                # between replicas -- and these lists are large:
+                #   tif.txt   52.6 MB
+                #   pro.txt    4.8 MB
+                #   fake.txt   0.3 MB
+                # 57.7 MB per replica, three replicas, so 173 MB per cycle. At
+                # 4h that was ~1.04 GB/day in six bursts, and on a ~51 Mbit DSL
+                # each burst is roughly 27 seconds of fully saturated downlink.
+                # All three refresh within about two minutes of each other, so
+                # they stack rather than spread.
+                #
+                # That is a latency event, not a bandwidth cost: with
+                # bufferbloat on the line, 27 seconds of saturation is 27
+                # seconds of unusable interactive traffic. Six a day.
+                #
+                # The lists change on the order of days, so 4h bought nothing.
+                # Note the period runs from pod start, not wall clock, so the
+                # burst drifts -- it cannot be pinned to the small hours.
+                refreshPeriod: 24h
                 # serve while lists are still downloading
                 strategy: fast
                 downloads:
