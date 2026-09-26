@@ -35,7 +35,7 @@ spec:
             command:
               - "sh"
               - "-c"
-              - "exec npm install -g --prefix /claude @anthropic-ai/claude-code@2.1.278"
+              - "exec npm install -g --prefix /claude @anthropic-ai/claude-code@2.1.283"
             env:
               # npm writes a cache and a logs directory under $HOME, which is
               # read-only here like every other path outside the mounts.
