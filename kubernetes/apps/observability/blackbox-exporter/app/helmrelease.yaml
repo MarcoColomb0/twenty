@@ -1,0 +1,53 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: blackbox-exporter
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: blackbox-exporter
+  interval: 1h
+  values:
+    fullnameOverride: blackbox-exporter
+    # ICMP from a container needs a raw socket. Everything else in this
+    # repository drops ALL capabilities; this is the one workload that cannot,
+    # because an unprivileged ping needs either NET_RAW or a
+    # net.ipv4.ping_group_range sysctl Talos does not set.
+    #
+    # Written as the chart's own securityContext rather than `allowIcmp: true`,
+    # which reads like the obvious switch and does not exist in 11.19.1 --
+    # flate reported it as "values not used by the chart". Helm would have
+    # rendered it silently and every probe would have failed with
+    # "socket: permission denied".
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - "ALL"
+        add:
+          - "NET_RAW"
+    config:
+      modules:
+        icmp:
+          prober: icmp
+          timeout: 5s
+          icmp:
+            # Forced, so a target that also has an AAAA record cannot silently
+            # measure a different path than the one being diagnosed.
+            preferred_ip_protocol: ip4
+            ip_protocol_fallback: false
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    serviceMonitor:
+      # The exporter's own metrics, not the probe results. Probe results come
+      # from the Probe resources, which carry their own interval.
+      enabled: true

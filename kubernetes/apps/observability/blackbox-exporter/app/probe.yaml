@@ -1,0 +1,62 @@
+---
+# Latency probes that split "is it the WAN or is it something on the LAN".
+#
+# Read them together rather than individually:
+#
+#   1.1.1.1 / 8.8.8.8 spike, 192.168.1.1 and 192.168.1.2 flat
+#     -> the DSL side. Either the line itself (retrains, SNR) or the modem's
+#        queue filling, which is what bufferbloat turns into 400ms.
+#
+#   all four spike
+#     -> the router, not the line. A consumer box routing between
+#        192.168.100.0/24 and 192.168.1.0/24 runs out of CPU long before it
+#        runs out of bandwidth, and when it does everything through it suffers.
+#
+#   192.168.1.2 spikes but 1.1.1.1 does not
+#     -> inter-subnet routing load specifically, which is the backup path.
+#
+# 5s interval on purpose: the reported symptom is a spike every 20-30s, so
+# anything slower than about 10s risks sampling between them and seeing
+# nothing. Prometheus' global 30s would have missed it entirely.
+#
+# These probe from the cluster, not from the PC. They share the DSL and the
+# router, so anything at or beyond those shows up here -- but a fault local to
+# the PC's own switch port or NIC would not.
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: latency-router
+spec:
+  interval: 5s
+  scrapeTimeout: 5s
+  module: icmp
+  prober:
+    url: blackbox-exporter:9115
+  targets:
+    staticConfig:
+      static:
+        # The D-Link itself: LAN-side, one hop, no DSL involved.
+        - 192.168.1.1
+        # rustfs. Same router but across the subnet boundary, so this is the
+        # path every backup takes.
+        - 192.168.1.2
+      labels:
+        scope: lan
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: latency-wan
+spec:
+  interval: 5s
+  scrapeTimeout: 5s
+  module: icmp
+  prober:
+    url: blackbox-exporter:9115
+  targets:
+    staticConfig:
+      static:
+        - 1.1.1.1
+        - 8.8.8.8
+      labels:
+        scope: wan
