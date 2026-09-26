@@ -10,6 +10,7 @@ resources:
   - ./namespace.yaml
   - ./kube-prometheus-stack/ks.yaml
   - ./backup-monitoring/ks.yaml
+  - ./blackbox-exporter/ks.yaml
   - ./gatus/ks.yaml
   - ./kromgo/ks.yaml
   - ./ntfy/ks.yaml
