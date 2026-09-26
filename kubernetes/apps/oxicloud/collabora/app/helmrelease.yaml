@@ -23,7 +23,7 @@ spec:
           app:
             image:
               repository: docker.io/collabora/code
-              tag: 26.04.4.1.1
+              tag: 26.04.4.2.1
             env:
               # The WOPI host allowlist. Collabora refuses to open a document
               # for any host not named here, which is the control that stops a
