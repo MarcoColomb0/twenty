@@ -1,0 +1,42 @@
+# Talos 1.14 moved the control plane component settings out of v1alpha1 into
+# their own configuration documents. Setting them in both places is rejected:
+#   kube-apiserver config is already set in v1alpha1 config (.cluster.apiServer)
+# so these live here and the v1alpha1 equivalents are gone from cluster.yaml.
+---
+apiVersion: v1alpha1
+kind: KubeAPIServerConfig
+extraArgs:
+  # https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/
+  enable-aggregator-routing: true
+---
+apiVersion: v1alpha1
+kind: KubeControllerManagerConfig
+extraArgs:
+  # Bind on all interfaces so the metrics endpoint is reachable off-localhost
+  # for kube-prometheus-stack to scrape.
+  bind-address: 0.0.0.0
+---
+apiVersion: v1alpha1
+kind: KubeSchedulerConfig
+extraArgs:
+  bind-address: 0.0.0.0
+---
+apiVersion: v1alpha1
+kind: KubeProxyConfig
+# Cilium runs with kubeProxyReplacement, so kube-proxy must never be deployed.
+# This is `cluster.proxy.disabled: true` under the old schema -- note the sense
+# is inverted, `enabled: false` rather than `disabled: true`.
+enabled: false
+---
+# This was `cluster.apiServer.admissionControl: {$patch: delete}` before 1.14.
+# Talos generates a PodSecurity admission plugin with `enforce: baseline` and
+# only kube-system exempt. The live cluster runs without it:
+#   talosctl read /system/config/kubernetes/kube-apiserver/admission-control-config.yaml
+#   plugins: []
+# Letting it back in would reject the privileged pods this cluster depends on
+# -- Longhorn's instance managers, the CrowdSec agents, intel-device-plugins,
+# samba -- none of which run in an exempt namespace.
+apiVersion: v1alpha1
+kind: KubeAdmissionControlConfig
+name: PodSecurity
+$$patch: delete
