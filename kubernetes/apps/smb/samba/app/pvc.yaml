@@ -13,4 +13,12 @@ spec:
   storageClassName: longhorn
   resources:
     requests:
-      storage: 100Gi
+      # 144Gi, not the 100Gi this was created at: pvc-autoresizer has grown the
+      # volume as it filled, and a PVC request can never be lowered --
+      #   spec.resources.requests.storage: Forbidden: field can not be less
+      #   than status.capacity
+      # which failed the whole Kustomization on every reconcile. Any volume
+      # carrying the resize annotations above will drift this way, so the
+      # manifest has to be caught up to the live size rather than the other way
+      # round. Next time it grows, this number moves again.
+      storage: 144Gi
