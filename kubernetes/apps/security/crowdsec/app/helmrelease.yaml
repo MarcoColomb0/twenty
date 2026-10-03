@@ -186,6 +186,25 @@ spec:
             - filter: IsInBand && req.Host == "drive.${SECRET_DOMAIN}"
               apply:
                 - RemoveInBandRuleByID(911100) # method not allowed by policy
+            # Dawarich's mobile app updates settings with PATCH, which is also
+            # outside tx.allowed_methods:
+            #   rule_name   native_rule:911100
+            #   method      PATCH
+            #   uri         /api/v1/settings/mobile
+            #   user_agent  Dawarich/144 CFNetwork/3896.100.1.2.1 Darwin/27.0.0
+            # One CRITICAL rule scores 5 and 949110 blocks at 5, so a single
+            # settings sync was enough to ban the phone's carrier address
+            # outright -- and because the ban is on the source IP, it took the
+            # whole household's WAN address with it.
+            #
+            # Host-scoped rather than narrowed to PATCH: the filter language
+            # here is only confirmed for req.Host, and AppSec fails OPEN, so a
+            # filter that does not compile would crashloop both replicas and
+            # leave the external gateway with no inspection at all. A broad
+            # rule that works beats a precise one that might not.
+            - filter: IsInBand && req.Host == "dawarich.${SECRET_DOMAIN}"
+              apply:
+                - RemoveInBandRuleByID(911100) # method not allowed by policy
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
