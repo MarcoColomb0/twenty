@@ -1,7 +1,27 @@
 ---
 machine:
-  sysctls:
-    vm.nr_hugepages: "1024"
+  # vm.nr_hugepages was here and is deliberately gone.
+  #
+  # It reserved 1024 2MiB pages -- 2 GiB per node, 6 GiB across the cluster --
+  # for Longhorn's v2 data engine, which has never been switched on:
+  #   kubectl -n longhorn-system get settings.longhorn.io v2-data-engine
+  #   false
+  # Nothing requested hugepages-2Mi, so that memory sat carved out below
+  # Kubernetes the whole time: 15.4 GiB capacity, 12.8 GiB allocatable. It is
+  # why KubeMemoryOvercommit was so hard to clear -- 4.5x what undeploying
+  # Sure recovered was reserved for a feature that was off.
+  #
+  # Restoring it is one line, but v2 does not fit this hardware and the modules
+  # below are the cheap half of the prerequisites:
+  #   - twenty-hp01 has no NVMe (Samsung 850 EVO, SATA); v2 exists to put an
+  #     NVMe behind a user-space SPDK driver
+  #   - the Longhorn disks are type=filesystem on the boot device, and v2 wants
+  #     a dedicated raw block device, which needs an M.2 slot these do not have
+  #   - spdk_tgt busy-polls one full core per node, 25% of the 4-core N150,
+  #     whether or not anything is doing I/O
+  #
+  # The modules stay. They cost nothing measurable, and leaving them means
+  # re-enabling v2 is a sysctl away if all three nodes ever get matching NVMe.
   kernel:
     modules:
       - name: nvme_tcp
