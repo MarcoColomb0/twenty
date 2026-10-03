@@ -107,7 +107,7 @@ nodes:
 patches:
   - "@./patches/global/machine-files.yaml"
   - "@./patches/global/machine-kubelet.yaml"
-  - "@./patches/global/machine-network.yaml"
+  - "@./patches/global/resolver.yaml"
   - "@./patches/global/machine-sysctls.yaml"
   - "@./patches/global/machine-time.yaml"
   - "@./patches/global/machine-longhorn.yaml"
@@ -116,4 +116,5 @@ patches:
 controlPlane:
   patches:
     - "@./patches/controller/cluster.yaml"
+    - "@./patches/controller/kubernetes.yaml"
     - "@./patches/controller/machine-features.yaml"

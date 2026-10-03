@@ -1,0 +1,18 @@
+# Talos 1.14 moved DNS resolution out of machine.network into ResolverConfig.
+# Setting either in both places is rejected:
+#   .machine.network.nameservers is already set in v1alpha1 config
+#   .machine.network.disableSearchDomain is already set in v1alpha1 config
+# This replaced machine-network.yaml, which held nothing else.
+---
+apiVersion: v1alpha1
+kind: ResolverConfig
+nameservers:
+  - address: 1.1.1.1
+  - address: 1.0.0.1
+  - address: 8.8.8.8
+  - address: 9.9.9.9
+# Was machine.network.disableSearchDomain. Without it the FQDN-derived search
+# domain is appended to unqualified lookups, which makes a bare hostname
+# resolve through the cluster domain unintentionally.
+searchDomains:
+  disableDefault: true
