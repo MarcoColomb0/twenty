@@ -30,7 +30,7 @@ spec:
           init-tmp:
             image: &image
               repository: docker.io/freikin/dawarich
-              tag: 1.15.2
+              tag: 1.15.3
             command:
               - "sh"
               - "-c"
