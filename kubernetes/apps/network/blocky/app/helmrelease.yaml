@@ -21,6 +21,16 @@ spec:
             args:
               - "--config"
               - "/app/config.yml"
+            env:
+              # Go's default GC lets the heap reach twice the live set before
+              # collecting. Live is ~350Mi steady and ~450-500Mi while a list
+              # refresh holds old and new denylists at once, so doubling that
+              # lands on the 768Mi limit -- all three replicas peaked at 760-804Mi
+              # when their refreshes coincided, and one was OOMKilled. A soft
+              # limit makes the GC work harder near it instead, below the cgroup
+              # ceiling with room for stacks and other non-heap memory. Cheaper
+              # than raising the limit, which is also the reservation here.
+              GOMEMLIMIT: 600MiB
             probes:
               liveness: &probes
                 enabled: true
@@ -51,6 +61,7 @@ spec:
                 # is the limit clipping the workload rather than its demand.
                 # The denylists dominate and do not shrink; bounding the cache
                 # above is what makes this a ceiling rather than a countdown.
+                # GOMEMLIMIT above has to stay below this.
                 memory: 768Mi
 
     defaultPodOptions:
