@@ -123,6 +123,11 @@ spec:
               # for it, so one thread costs no throughput and a quarter of the
               # peak memory.
               MACHINE_LEARNING_REQUEST_THREADS: "1"
+              # Defaults to FP32. The iGPU computes in FP16 natively, so this
+              # halves weights and GPU buffers for no measurable loss on CLIP.
+              # nllb-clip-base-siglip at FP32 still took the pod to 6.3G on a
+              # textual load, with ~6.8G free on the node.
+              MACHINE_LEARNING_OPENVINO_PRECISION: FP16
               # Same root cause, quieter symptom: matplotlib falls back to a
               # throwaway /tmp dir and warns on every start.
               MPLCONFIGDIR: /cache/matplotlib
@@ -162,11 +167,15 @@ spec:
                 # hostPath mount shows the render node without the permission.
                 gpu.intel.com/i915: 1
               limits:
-                # OpenVINO uses noticeably more memory than CPU inference, and
-                # nllb-clip-large-siglip is one of the bigger models. Headroom
-                # for the model-compile spike; a limit is a ceiling rather than
-                # a reservation, so this does not affect scheduling.
-                memory: 10Gi
+                # Must stay below what twenty-lp01 has free, not merely below its
+                # capacity. iGPU buffers are shmem charged to this cgroup, so a
+                # model load lands here in full -- nllb-clip-large-siglip at FP32
+                # peaked at 7.4G (5.2G of it GPU). Under the old 10Gi the node ran
+                # out first, and the global OOM killer, which ranks by RSS and
+                # cannot see GPU shmem, took kube-apiserver instead: etcd stalls,
+                # control plane flaps, Longhorn replicas fail and rebuild. Here a
+                # bad load OOMKills this pod and nothing else.
+                memory: 5Gi
                 gpu.intel.com/i915: 1
     defaultPodOptions:
       securityContext:
