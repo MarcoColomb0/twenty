@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/postgresql.cnpg.io/cluster_v1.json
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-argus
+spec:
+  instances: 2
+  inheritedMetadata:
+    annotations:
+      resize.topolvm.io/storage_limit: 20Gi
+      resize.topolvm.io/threshold: 20%
+      resize.topolvm.io/increase: 20%
+  # ~40k catalog cards, 80k CardMarket products and daily
+  # price history for held cards: a few GB at most.
+  storage:
+    size: 5Gi
+    storageClass: longhorn
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "argus"
+  bootstrap:
+    initdb:
+      database: argus
+      owner: argus
+      # Extensions need superuser; the app's own migrations only re-assert them IF NOT EXISTS,
+      # so the argus role stays unprivileged.
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 1Gi

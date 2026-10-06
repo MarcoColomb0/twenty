@@ -21,7 +21,11 @@ spec:
     # sat at DESIRED=0. The label is set instead by machine.nodeLabels on
     # twenty-hp01 in talconfig.yaml, which is what NFD would have done. A future
     # node with an iGPU gets the plugin by carrying the same label.
-    # One container at a time may hold the GPU. Raising this shares the render
-    # node between pods, which is not wanted while Immich is its only consumer.
-    sharedDevNum: 1
+    # Two containers per node may hold the render node: Immich (transcoding on
+    # twenty-hp01, OpenVINO on twenty-lp01) and the Argus scraper, whose browser
+    # needs a real GPU for WebGL. The scraper loads a handful of pages an hour,
+    # so it does not compete for the GPU itself -- but iGPU memory is system
+    # RAM, charged to whichever pod allocates it, so the two consumers share
+    # the node's free memory too. Keep both memory limits below it.
+    sharedDevNum: 2
     enableMonitoring: true
