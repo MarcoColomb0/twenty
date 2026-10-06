@@ -1,0 +1,19 @@
+---
+# The scraper's browser profile: cookies, consent state and the fingerprint
+# seed. Small, but it is identity -- a fresh profile looks like a new visitor --
+# hence VolSync rather than treating it as cache.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: argus-browser
+  annotations:
+    resize.topolvm.io/storage_limit: 5Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi

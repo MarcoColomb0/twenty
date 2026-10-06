@@ -1,0 +1,251 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: argus
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: argus
+  interval: 1h
+  values:
+    controllers:
+      # Next.js app: UI, API routes, auth. Migrations run first as an init container, so a schema
+      # change and the code that needs it always arrive together.
+      web:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        initContainers:
+          migrate:
+            image: &web-image
+              repository: ghcr.io/marcocolomb0/argus-web
+              tag: 0.2.0
+            command:
+              - "node"
+              - "/migrate/scripts/migrate.mjs"
+            env:
+              DATABASE_URL: &db-url
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-argus-app
+                    key: uri
+            securityContext: &restricted
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+        containers:
+          app:
+            image: *web-image
+            env:
+              DATABASE_URL: *db-url
+              BETTER_AUTH_URL: https://argus.${SECRET_DOMAIN}
+              OIDC_USER_GROUP: argus-users
+              OIDC_ADMIN_GROUP: argus-admins
+              OIDC_ISSUER_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: issuer_url
+              OIDC_CLIENT_ID:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: client_id
+              OIDC_CLIENT_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: client_secret
+              OIDC_AUTHORIZATION_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: authorization_url
+              OIDC_TOKEN_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: token_url
+              OIDC_USERINFO_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: userinfo_url
+              OIDC_END_SESSION_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-oidc
+                    key: end_session_url
+            envFrom:
+              - secretRef:
+                  name: argus-secret
+            probes:
+              liveness: &web-probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/health
+                    port: &web-port 3000
+                  periodSeconds: 15
+                  timeoutSeconds: 5
+                  failureThreshold: 4
+              readiness: *web-probes
+            securityContext: *restricted
+            resources:
+              # requests.cpu + limits.memory only, as everywhere in twenty: with no
+              # memory request the limit is also what gets reserved on the node.
+              # First guesses for all three; revisit against `kubectl top` once
+              # a full import and a scrape window have run.
+              requests:
+                cpu: 20m
+              limits:
+                memory: 768Mi
+
+      # Catalog sync, CardMarket price guide, snapshots, alerts, embeddings, and the scheduler
+      # that queues the nightly scrape. One replica: the scheduler is idempotent, not leader-elected.
+      worker:
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image: &worker-image
+              repository: ghcr.io/marcocolomb0/argus-worker
+              tag: 0.2.0
+            args:
+              - "general"
+            env:
+              DATABASE_URL: *db-url
+              TZ: Europe/Rome
+              APP_URL: https://argus.${SECRET_DOMAIN}
+              # The scheduler queues the scrape when the window opens and reports caps/backlog.
+              SCRAPE_WINDOW: "8-23"
+              SCRAPE_HOURLY_CAP: "45"
+              SCRAPE_DAILY_CAP: "400"
+            envFrom: &worker-envfrom
+              - secretRef:
+                  name: argus-secret
+            securityContext: *restricted
+            resources:
+              requests:
+                cpu: 20m
+              limits:
+                # Embedding builds hold the CLIP model (~350 MB) plus image batches.
+                memory: 1536Mi
+
+      # CardMarket listing scraper: one stealth browser, one page at a time. Keep it at one replica:
+      # caps are shared through the database, but two browsers would double the request rate.
+      scraper:
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image: *worker-image
+            args:
+              - "scraper"
+            env:
+              DATABASE_URL: *db-url
+              TZ: Europe/Rome
+              APP_URL: https://argus.${SECRET_DOMAIN}
+              # Person-browsing pace (see apps/worker/argus_worker/scraper/pacing.py). A big import is
+              # priced over days, most valuable first; raise caps slowly, never in a hurry.
+              SCRAPE_WINDOW: "8-23"
+              SCRAPE_HOURLY_CAP: "45"
+              SCRAPE_DAILY_CAP: "400"
+              SCRAPE_DELAY_MIN: "8"
+              SCRAPE_DELAY_MAX: "25"
+              SCRAPE_BLOCK_COOLDOWN_H: "12"
+              SCRAPE_BLOCK_COOLDOWN_MAX_H: "168"
+              # Headed on Xvfb (hexium: headless is still detectable on some sites).
+              SCRAPE_HEADLESS: "0"
+              # If `argus-worker browser-check` reports a software WebGL renderer (llvmpipe or
+              # SwiftShader), route WebGL through the iGPU via Vulkan:
+              # SCRAPE_CHROME_ARGS: "--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
+            envFrom: *worker-envfrom
+            securityContext:
+              allowPrivilegeEscalation: false
+              # Chromium writes outside the mounted paths (crash reports, font caches).
+              readOnlyRootFilesystem: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+                # The linux-native persona shows the real GPU; without one Chromium falls back to a
+                # software renderer, a classic bot tell. Needs sharedDevNum >= 2 on the Intel GPU
+                # plugin so the scraper can share an iGPU with Immich (kube-system/intel-device-plugins-gpu).
+                gpu.intel.com/i915: 1
+              limits:
+                # iGPU buffers are shmem charged to this cgroup, and so is the
+                # memory-backed /dev/shm below. Keep this small: the scraper shares
+                # a node with an Immich GPU consumer, and Immich ML on twenty-lp01
+                # once took the node out of memory entirely -- the kernel then
+                # killed kube-apiserver, not the pod responsible.
+                memory: 2Gi
+                gpu.intel.com/i915: 1
+
+    defaultPodOptions:
+      # The images are private (private repo); see ghcr.sops.yaml.
+      imagePullSecrets:
+        - name: argus-ghcr
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+
+    persistence:
+      next-cache:
+        type: emptyDir
+        advancedMounts:
+          web:
+            app:
+              - path: /app/apps/web/.next/cache
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+      browser:
+        existingClaim: argus-browser
+        advancedMounts:
+          scraper:
+            app:
+              - path: /data
+      # Chromium needs more shared memory than the container default of 64 MiB.
+      shm:
+        type: emptyDir
+        medium: Memory
+        sizeLimit: 1Gi
+        advancedMounts:
+          scraper:
+            app:
+              - path: /dev/shm
+
+    service:
+      app:
+        controller: web
+        ports:
+          http:
+            port: *web-port
+
+    route:
+      app:
+        annotations:
+          # / redirects to sign-in. /api/health answers 200 only when the app
+          # and Postgres both do, which is the thing worth alerting on.
+          gatus.home-operations.com/endpoint: |
+            path: /api/health
+        # Published like the other Pocket ID-gated apps: the PWA has to work away from home,
+        # and web push needs a public https origin.
+        hostnames:
+          - "argus.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-external
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *web-port

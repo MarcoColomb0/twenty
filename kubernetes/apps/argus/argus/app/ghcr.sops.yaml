@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argus-ghcr
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: ENC[AES256_GCM,data:KqSQSgILhy//5hAbZyRzqICPC1rVdeHzeMpqzNwLOC8pg6HnVIbMx4aK3uG4JgWlIy07wKmYSGzQFDwyebqHj0ky/iuWBkxShHtaXZWEEab8yFXnPDef9ywab5Ir8i5cPWjKn92HUVRYqA9pnkdlUhkO74WhgllNiFu7vZE4dw9HkkRbHD/lOYoP4cIESJC03LmoKLJlD43WIkaBIsStIu2rYo8Wt66Pf2q040IgnHbh9Ky/+LxgGYQ=,iv:8SN9ECqgJWooPUuUYtzQJPLD05S3vbSn6vetNf7jxB8=,tag:n3r1G7p6S/p67XjusxdoDQ==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0RWdXcEwwNkY4VFJOc3pE
+        SDk4YnJXRjBodTdMcEY2bmxoT0VxenF4NnhnCnVtTzFXVjcxSTV2S094ekMxaGds
+        YTEyVnV0bUZRbnMyZkJ3RXR5QnBKRFUKLS0tIG9WaWN1R0Fwa2FPd09TQjZEa2hL
+        NGlXK3huYzdIS01tLzdaL1dEbFJpL0kKb42egh0/EYh67MHM2Cr5H2wVQ6EFAmiF
+        5ysjtHLlmfwBBLLtS3KuFVbZVTT0lavGBVZVBUuOt0Kz0ZJwPwh1Tg==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-10-06T19:17:42Z"
+  mac: ENC[AES256_GCM,data:Cg1w0TYrQyV1qri1FEZEreczYlm725EptePmw5Yy2iKS/EHpfrV/dHLuE2+uikMMGfynlCT8Ej3mXyTWZ8vVq4Ax9fxeY/1IRGS6q3q5yzEEyVvduA6D8hKYxkHzn9PLNoeaMj6NDnp4agayFbC47YajWe3ugySnlz9Ej6xYDUg=,iv:lJ8BDw2mQTvemuymUU0BDEztGoFAzczzp5DGD5wAAN4=,tag:DFRx6VItugQHq20mlTuG/Q==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3
