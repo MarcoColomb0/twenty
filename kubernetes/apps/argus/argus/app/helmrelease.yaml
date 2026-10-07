@@ -154,8 +154,13 @@ spec:
               SCRAPE_WINDOW: "8-23"
               SCRAPE_HOURLY_CAP: "45"
               SCRAPE_DAILY_CAP: "400"
-              SCRAPE_DELAY_MIN: "8"
-              SCRAPE_DELAY_MAX: "25"
+              # ~2 pages/min; searches spaced out and capped (a burst of ~4/min with 10 searches
+              # got an interactive challenge on 2026-10-07).
+              SCRAPE_DELAY_MIN: "15"
+              SCRAPE_DELAY_MAX: "40"
+              SCRAPE_SEARCH_MIN_GAP_S: "60"
+              SCRAPE_SEARCH_HOURLY_CAP: "15"
+              SCRAPE_RATE_LIMIT_COOLDOWN_M: "60"
               SCRAPE_BLOCK_COOLDOWN_H: "12"
               SCRAPE_BLOCK_COOLDOWN_MAX_H: "168"
               # Headed on Xvfb (hexium: headless is still detectable on some sites).
