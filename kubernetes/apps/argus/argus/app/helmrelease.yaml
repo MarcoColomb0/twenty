@@ -152,9 +152,10 @@ spec:
               APP_URL: https://argus.${SECRET_DOMAIN}
               # Person-browsing pace (see apps/worker/argus_worker/scraper/pacing.py). A big import is
               # priced over days, most valuable first; raise caps slowly, never in a hurry.
-              SCRAPE_WINDOW: "8-23"
+              SCRAPE_WINDOW: "0.24"
               SCRAPE_HOURLY_CAP: "45"
               SCRAPE_DAILY_CAP: "400"
+              SCRAPE_WINDOW_JITTER_M: "0"
               # ~2 pages/min; searches spaced out and capped (a burst of ~4/min with 10 searches
               # got an interactive challenge on 2026-10-07).
               SCRAPE_DELAY_MIN: "15"
