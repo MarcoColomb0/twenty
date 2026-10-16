@@ -22,41 +22,50 @@ spec:
           matchLabels:
             app.kubernetes.io/name: k8s-gateway
     fullnameOverride: k8s-gateway
-    domain: "${SECRET_DOMAIN}"
-    ttl: 1
+    # Chart 4.0 replaced domain/ttl/fallthrough/watchedResources/
+    # extraZonePlugins with CoreDNS-style servers[]. Helm ignores unknown
+    # values, so the 4.0.1 bump rendered the chart's own default --
+    # "k8s_gateway example.com" -- and every LAN lookup for this domain fell
+    # through to the public resolver: internal-only names stopped resolving
+    # and public ones went out via the Cloudflare tunnel even at home.
+    serviceType: LoadBalancer
     service:
-      type: LoadBalancer
-      port: 53
       annotations:
         lbipam.cilium.io/ips: "192.168.100.103"
       externalTrafficPolicy: Cluster
-    watchedResources:
-      - "HTTPRoute"
-      - "Service"
-    # CoreDNS now sends the whole cluster domain here, so this has to answer for
-    # names that are not backed by a route as well -- public records like the
-    # tunnel target, or the ACME challenge TXT. Without fallthrough those would
-    # come back NXDOMAIN instead of their real answer.
-    fallthrough:
-      enabled: true
-    # Setting this replaces the chart's whole default list rather than adding to
-    # it, so every plugin has to be repeated. Dropping "ready" alone takes the
-    # /ready endpoint with it, the readiness probe never passes, and the
-    # LoadBalancer quietly loses its only endpoint -- which takes LAN DNS down.
-    extraZonePlugins:
-      - name: log
-      - name: errors
-      - name: health
-        configBlock: |-
-          lameduck 5s
-      - name: ready
-      - name: prometheus
-        parameters: 0.0.0.0:9153
-      # The one real change: the default here is /etc/resolv.conf, which points
-      # at CoreDNS, which now forwards this domain back to this pod. Unknown
-      # names would loop, so fallthrough goes straight to a public resolver.
-      - name: forward
-        parameters: . 1.1.1.1 1.0.0.1
-      - name: loop
-      - name: reload
-      - name: loadbalance
+    servers:
+      - zones:
+          - zone: .
+            use_tcp: true
+        port: 53
+        # The list replaces the chart's default plugins wholesale. Dropping
+        # "ready" takes the /ready endpoint with it, the readiness probe never
+        # passes, and the LoadBalancer loses its only endpoint -- which takes
+        # LAN DNS down.
+        plugins:
+          - name: log
+          - name: errors
+          - name: health
+            configBlock: |-
+              lameduck 5s
+          - name: ready
+          # CoreDNS sends the whole cluster domain here, so this has to answer
+          # for names not backed by a route as well -- public records like the
+          # tunnel target, or the ACME challenge TXT. Without fallthrough those
+          # would come back NXDOMAIN instead of their real answer.
+          - name: k8s_gateway
+            parameters: "${SECRET_DOMAIN}"
+            configBlock: |-
+              ttl 1
+              resources HTTPRoute Service
+              fallthrough
+          - name: prometheus
+            parameters: 0.0.0.0:9153
+          # The default here is /etc/resolv.conf, which points at CoreDNS,
+          # which forwards this domain back to this pod. Unknown names would
+          # loop, so fallthrough goes straight to a public resolver.
+          - name: forward
+            parameters: . 1.1.1.1 1.0.0.1
+          - name: loop
+          - name: reload
+          - name: loadbalance
