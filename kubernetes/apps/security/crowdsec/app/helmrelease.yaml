@@ -205,6 +205,16 @@ spec:
             - filter: IsInBand && req.Host == "dawarich.${SECRET_DOMAIN}"
               apply:
                 - RemoveInBandRuleByID(911100) # method not allowed by policy
+            # Trilium's web client persists UI state with PUT on nearly every
+            # click -- expanding a tree branch, switching tabs, saving a note:
+            #   rule_name   native_rule:911100
+            #   method      PUT
+            #   uri         /api/options
+            # and deletes notes with DELETE, so outside the LAN the app broke
+            # on first interaction. Same host-scoped shape as above.
+            - filter: IsInBand && req.Host == "notes.${SECRET_DOMAIN}"
+              apply:
+                - RemoveInBandRuleByID(911100) # method not allowed by policy
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"
