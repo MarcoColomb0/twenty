@@ -128,6 +128,14 @@ spec:
               # nllb-clip-base-siglip at FP32 still took the pod to 6.3G on a
               # textual load, with ~6.8G free on the node.
               MACHINE_LEARNING_OPENVINO_PRECISION: FP16
+              # 3.3's re-exported models: faster and lighter on every backend,
+              # and they fix OpenVINO occasionally producing wrong outputs.
+              # Opt-in until a later release makes it the default. Outputs are
+              # numerically equivalent to v1, so existing faces, OCR and CLIP
+              # embeddings stay valid and nothing needs re-running. Each model
+              # is downloaded again and recompiled for the iGPU once, so the
+              # first job after this rolls out is slow.
+              MACHINE_LEARNING_MODEL_REVISION: v2
               # Same root cause, quieter symptom: matplotlib falls back to a
               # throwaway /tmp dir and warns on every start.
               MPLCONFIGDIR: /cache/matplotlib
