@@ -124,7 +124,7 @@ spec:
           app:
             image:
               repository: docker.io/library/mongo
-              tag: "8.3.11"
+              tag: "8.3.13"
             env:
               TZ: *tz
             probes:
