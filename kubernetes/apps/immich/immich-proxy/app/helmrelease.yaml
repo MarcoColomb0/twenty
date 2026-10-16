@@ -30,22 +30,60 @@ spec:
               #   Unable to reach Immich on http://immich.immich.svc...:2283
               IMMICH_URL: http://immich-app.immich.svc.cluster.local:2283
               PUBLIC_BASE_URL: https://photos.${SECRET_DOMAIN}
-              # No landing page: an unauthenticated visitor to the bare
-              # hostname should learn nothing about what is behind it.
-              CONFIG: '{"ipp": {"showHomePage": false}}'
+              # The privacy-relevant values are stated even where they match the
+              # 4.0 default, so a future default change cannot quietly widen what
+              # visitors see. The exif fields are left out only because every
+              # one of them already defaults to hidden.
+              #
+              # showHomePage: no landing page; an unauthenticated visitor to the
+              # bare hostname should learn nothing about what is behind it.
+              # allowDownload 1: the per-share "Allow download" toggle in Immich
+              # decides, rather than IPP forcing it on (2) for every share.
+              # downloadedFilename 2: anonymous share-hash names, so original
+              # filenames (dates, device names) never leave the house.
+              # showMetadata: 4.0 hides every field unless its flag is true,
+              # except location.webLink, which defaults to true and hands the
+              # visitor a map link to where the photo was taken.
+              # allowSlugLinks stays on: one live share uses a custom /s/ URL.
+              # uploadUrl is irrelevant without the companion upload container,
+              # which is not deployed -- this stays read-only.
+              CONFIG: >-
+                {"ipp": {
+                  "showHomePage": false,
+                  "allowDownload": 1,
+                  "downloadedFilename": 2,
+                  "showMetadata": {
+                    "description": {"caption": false, "sidebar": false},
+                    "location": {"city": false, "state": false, "country": false, "gps": false, "webLink": false}
+                  }
+                }}
             probes:
-              liveness: &probes
+              # 4.0's healthcheck fails whenever Immich is unreachable. That is
+              # right for readiness -- stop routing to a proxy that cannot serve
+              # -- but as liveness it would restart a healthy proxy every time
+              # the server restarts, which fixes nothing. Liveness only asks
+              # whether the process is listening.
+              liveness:
                 enabled: true
                 custom: true
                 spec:
-                  httpGet:
-                    path: /share/healthcheck
+                  tcpSocket:
                     port: &port 3000
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
                   failureThreshold: 3
-              readiness: *probes
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /share/healthcheck
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
@@ -61,6 +99,8 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
     service:
       app:
         ports:
