@@ -45,8 +45,9 @@ spec:
               # except location.webLink, which defaults to true and hands the
               # visitor a map link to where the photo was taken.
               # allowSlugLinks stays on: one live share uses a custom /s/ URL.
-              # uploadUrl is irrelevant without the companion upload container,
-              # which is not deployed -- this stays read-only.
+              # uploadUrl keeps its default, /upload, which the route below sends
+              # to the upload controller. This container stays read-only either
+              # way; writes happen only in that one.
               CONFIG: >-
                 {"ipp": {
                   "showHomePage": false,
@@ -93,6 +94,89 @@ spec:
                 cpu: 10m
               limits:
                 memory: 256Mi
+      # Visitor uploads, as a separate container so the gallery above never
+      # gains a write path. It holds no API key: each file is streamed to
+      # Immich with the share's own key, exactly as Immich's public share page
+      # does, so it can only add to a share whose "Allow public user to
+      # upload" toggle is on in Immich. Every other share answers 404.
+      #
+      # One replica on purpose. Password-protected shares unlock with a
+      # session cookie signed by a secret generated at process start, so a
+      # second replica would reject the cookie the first one issued.
+      upload:
+        strategy: RollingUpdate
+        containers:
+          app:
+            image:
+              repository: docker.io/alangrainger/immich-public-proxy-upload
+              tag: "4.0.0"
+            env:
+              IMMICH_URL: http://immich-app.immich.svc.cluster.local:2283
+              PUBLIC_BASE_URL: https://photos.${SECRET_DOMAIN}
+              # maxFileSize 95: Cloudflare refuses any request over 100 MB on
+              # the free plan, tunnel included, and each file is one request.
+              # Under the cap the page refuses a bigger file up front, rather
+              # than the visitor watching it upload and then fail at the edge.
+              # Long videos therefore cannot be sent this way.
+              #
+              # byteBudget is per share per hour, across all visitors, and is
+              # the real ceiling on how much disk a leaked link can fill. 2 GB
+              # an hour is a few hundred phone photos; the 10 GB default is
+              # more than any guest needs.
+              #
+              # rateLimit is keyed on the client address, and that address is
+              # always an envoy pod, so in practice it is per share, not per
+              # visitor.
+              #
+              # filenamePrefix is what the Immich review workflow matches on.
+              CONFIG: >-
+                {"ipp": {
+                  "allowSlugLinks": true,
+                  "customInvalidResponse": false,
+                  "upload": {
+                    "maxFileSize": 95,
+                    "rateLimit": 60,
+                    "byteBudget": 2048,
+                    "filenamePrefix": "ipp_upload_",
+                    "notifyUrl": "",
+                    "notifyHeaders": {},
+                    "notifyTimeout": 10000
+                  }
+                }}
+            probes:
+              # Same split as the gallery: the healthcheck fails while Immich
+              # is unreachable, which should stop traffic but not restart this.
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthcheck
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            securityContext:
+              allowPrivilegeEscalation: false
+              # Files are streamed through, never written here.
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
     defaultPodOptions:
       securityContext:
         runAsNonRoot: true
@@ -101,8 +185,17 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+    # A second service renames the first from immich-proxy to
+    # immich-proxy-app. Nothing refers to it by name -- the route uses
+    # identifiers -- so that is harmless here.
     service:
       app:
+        controller: immich-proxy
+        ports:
+          http:
+            port: *port
+      upload:
+        controller: upload
         ports:
           http:
             port: *port
@@ -121,6 +214,15 @@ spec:
             namespace: network
             sectionName: https
         rules:
+          # The upload service serves its routes under /upload as well as at
+          # the root, so the prefix is forwarded unchanged.
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /upload
+            backendRefs:
+              - identifier: upload
+                port: *port
           - backendRefs:
               - identifier: app
                 port: *port

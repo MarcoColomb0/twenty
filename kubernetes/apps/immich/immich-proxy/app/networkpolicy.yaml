@@ -1,9 +1,11 @@
 ---
-# This proxy is the only part of Immich published to the internet, so it is
-# the pod an attacker would land in. It needs exactly two things: requests from
-# the external gateway, and the Immich API. Everything else -- the database,
-# the ML service, the LAN, the internet -- is denied, so a compromised proxy
-# cannot be used to reach past the share API it already fronts.
+# These proxies are the only part of Immich published to the internet, so
+# they are the pods an attacker would land in. The selector covers both the
+# gallery and the upload service, and each needs exactly two things: requests
+# from the external gateway, and the Immich API. Everything else -- the
+# database, the ML service, the LAN, the internet -- is denied, so a
+# compromised proxy cannot be used to reach past the share API it already
+# fronts.
 #
 # Kubelet probes come from the host, which Cilium admits regardless of policy.
 apiVersion: networking.k8s.io/v1
