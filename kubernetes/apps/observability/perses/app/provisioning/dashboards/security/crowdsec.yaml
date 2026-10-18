@@ -1,0 +1,783 @@
+---
+# CrowdSec: LAPI (crowdsec-service), agents, AppSec, and envoy-proxy-bouncer.
+#
+#   - The bouncer runs two replicas that each hold the whole decision list, so
+#     list sizes take the max over pods rather than the sum.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: crowdsec
+  project: security
+spec:
+  display:
+    name: CrowdSec
+    description: 'What reaches the house from the internet and what is refused: the bouncer in front of envoy-external, the AppSec WAF, the agents reading Envoy''s logs, and the LAPI holding the ban list.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    lapiConnected:
+      kind: Panel
+      spec:
+        display:
+          name: Bouncer connected
+          description: Whether every bouncer replica holds its decision stream to the LAPI. Disconnected, it keeps enforcing the last list it had but learns no new bans.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            mappings:
+              - kind: Value
+                spec:
+                  value: "1"
+                  result:
+                    value: Connected
+                    color: '#43a047'
+              - kind: Value
+                spec:
+                  value: "0"
+                  result:
+                    value: Disconnected
+                    color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: min(bouncer_lapi_stream_connected)
+    syncAge:
+      kind: Panel
+      spec:
+        display:
+          name: Decisions synced
+          description: Time since the bouncer last pulled decisions from the LAPI.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 120
+                  color: '#ffb300'
+                - value: 600
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: time() - max(bouncer_lapi_last_sync_timestamp_seconds)
+    bans:
+      kind: Panel
+      spec:
+        display:
+          name: IPs banned
+          description: 'Decisions loaded into the bouncer: the community blocklist (CAPI), subscribed lists, and local bans.'
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 1
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(sum by (pod) (bouncer_decision_cache_size))
+    wafBlocks:
+      kind: Panel
+      spec:
+        display:
+          name: WAF blocks
+          description: Requests AppSec refused in the selected range -- each one a single request, not a ban on the IP.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(bouncer_waf_requests_total{action="ban"}[$__range]))
+    ipBlocks:
+      kind: Panel
+      spec:
+        display:
+          name: Requests from banned IPs
+          description: Requests refused because the source IP is already on a decision list.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(bouncer_requests_total{action="ban"}[$__range]))
+    bouncerErrors:
+      kind: Panel
+      spec:
+        display:
+          name: Bouncer errors
+          description: Checks that failed outright -- AppSec unreachable during a restart, mostly. Envoy fails open on these, so each is a request that went through uninspected. WAF errors are a subset of these, not extra.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 50
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(bouncer_requests_total{action="error"}[$__range]))
+    linesRead:
+      kind: Panel
+      spec:
+        display:
+          name: Log lines read (1h)
+          description: Envoy access-log lines the agents read in the last hour. At zero every log-based scenario -- probing, scanning, brute force -- is blind while the external gateway keeps serving; only AppSec still inspects. On 2026-10-18 this had sat near zero for days until the agents were restarted.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum(increase(cs_filesource_hits_total[1h])))
+    localBans:
+      kind: Panel
+      spec:
+        display:
+          name: Local bans
+          description: Bans issued by this installation's own scenarios, as opposed to the community and list ones.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cs_active_decisions{origin="crowdsec"}) or vector(0)
+    agents:
+      kind: Panel
+      spec:
+        display:
+          name: Machines alive
+          description: Agents and AppSec pods that checked in with the LAPI in the last two minutes.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(time() - max by (exported_machine) (cs_machines_last_heartbeat_timestamp) < 120)
+    p95:
+      kind: Panel
+      spec:
+        display:
+          name: Bouncer p95
+          description: Time the bouncer adds to each external request, AppSec included.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.1
+                  color: '#ffb300'
+                - value: 0.5
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(bouncer_request_duration_seconds_bucket[$__range])))
+    parseFail:
+      kind: Panel
+      spec:
+        display:
+          name: Unparsed log lines
+          description: Envoy access-log lines no parser understood. A jump means the log format changed and scenarios have gone blind.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.05
+                  color: '#ffb300'
+                - value: 0.2
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cs_parser_hits_ko_total{acquis_type="containerd"}[$__range])) / (sum(rate(cs_parser_hits_ok_total{acquis_type="containerd"}[$__range])) + sum(rate(cs_parser_hits_ko_total{acquis_type="containerd"}[$__range])))
+    version:
+      kind: Panel
+      spec:
+        display:
+          name: Version
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: version
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (version) (cs_info)
+    bouncerActions:
+      kind: Panel
+      spec:
+        display:
+          name: Bouncer verdicts
+          description: 'Every request to envoy-external: allowed, or refused because the IP is banned.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (action) (rate(bouncer_requests_total[$__rate_interval]))
+                  seriesNameFormat: '{{action}}'
+    wafActions:
+      kind: Panel
+      spec:
+        display:
+          name: WAF verdicts
+          description: The same requests as AppSec saw them.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (action) (rate(bouncer_waf_requests_total[$__rate_interval]))
+                  seriesNameFormat: '{{action}}'
+    decisionsByOrigin:
+      kind: Panel
+      spec:
+        display:
+          name: Decisions loaded
+          description: CAPI is the community blocklist; lists are the subscribed blocklists; crowdsec is local.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+                shortValues: true
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (origin) (sum by (origin, pod) (bouncer_decision_cache_size))
+                  seriesNameFormat: '{{origin}}'
+    decisionChurn:
+      kind: Panel
+      spec:
+        display:
+          name: Decisions added
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (origin) (increase(bouncer_lapi_decisions_added_total[$__rate_interval])) > 0
+                  seriesNameFormat: '{{origin}}'
+    alertsByReason:
+      kind: Panel
+      spec:
+        display:
+          name: Alerts by reason
+          description: What triggered alerts over the selected range. AppSec anomaly scores name the rule families that added up -- lfi, rce, php_injection.
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: decimal
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, round(sum by (reason) (increase(cs_alerts[$__range]))) > 0)
+                  seriesNameFormat: '{{reason}}'
+    scenarios:
+      kind: Panel
+      spec:
+        display:
+          name: Scenarios triggered
+          description: Events poured into each scenario's bucket. A bucket that overflows becomes a ban.
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: decimal
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, round(sum by (name) (increase(cs_bucket_poured_total[$__range]))) > 0)
+                  seriesNameFormat: '{{name}}'
+    appsecBlocks:
+      kind: Panel
+      spec:
+        display:
+          name: AppSec blocks
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+            querySettings:
+              - queryIndex: 0
+                colorMode: fixed-single
+                colorValue: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(cs_appsec_block_total[$__rate_interval]))
+                  seriesNameFormat: blocked
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(cs_appsec_reqs_total[$__rate_interval]))
+                  seriesNameFormat: inspected
+    parsed:
+      kind: Panel
+      spec:
+        display:
+          name: Log lines parsed
+          description: One agent per node, each reading the envoy-external pods scheduled there.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: lines/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (machine) (rate(cs_parser_hits_ok_total{acquis_type="containerd"}[$__rate_interval]))
+                  seriesNameFormat: ok {{machine}}
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cs_parser_hits_ko_total{acquis_type="containerd"}[$__rate_interval]))
+                  seriesNameFormat: failed
+    heartbeats:
+      kind: Panel
+      spec:
+        display:
+          name: Machines
+          description: Every agent and AppSec pod registered with the LAPI. Old pod names linger until the LAPI forgets them; only recent ones matter.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: exported_machine
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - exported_machine
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: exported_machine
+                header: Exported_machine
+                enableSorting: true
+              - name: value
+                header: Last seen
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: seconds
+                  decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: time() - max by (exported_machine) (cs_machines_last_heartbeat_timestamp)
+    lapiRoutes:
+      kind: Panel
+      spec:
+        display:
+          name: LAPI requests
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (route) (rate(cs_lapi_route_requests_total[$__rate_interval]))
+                  seriesNameFormat: '{{route}}'
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 3
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="security", pod=~"crowdsec-.*|envoy-proxy-bouncer-.*", container!=""}[$__rate_interval]))
+                  seriesNameFormat: '{{pod}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/lapiConnected'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/syncAge'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/bans'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/wafBlocks'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/ipBlocks'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/bouncerErrors'
+          - x: 0
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/linesRead'
+          - x: 4
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/localBans'
+          - x: 8
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/agents'
+          - x: 12
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/p95'
+          - x: 16
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/parseFail'
+          - x: 20
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/version'
+    - kind: Grid
+      spec:
+        display:
+          title: Edge decisions
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/bouncerActions'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/wafActions'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/decisionsByOrigin'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/decisionChurn'
+    - kind: Grid
+      spec:
+        display:
+          title: Detection
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 10
+            content:
+              $ref: '#/spec/panels/alertsByReason'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 10
+            content:
+              $ref: '#/spec/panels/scenarios'
+          - x: 0
+            "y": 10
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/appsecBlocks'
+          - x: 12
+            "y": 10
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/parsed'
+    - kind: Grid
+      spec:
+        display:
+          title: Components
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 9
+            content:
+              $ref: '#/spec/panels/heartbeats'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 9
+            content:
+              $ref: '#/spec/panels/lapiRoutes'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 9
+            content:
+              $ref: '#/spec/panels/cpu'
+  links:
+    - name: CrowdSec console
+      url: https://app.crowdsec.net/
+      targetBlank: true

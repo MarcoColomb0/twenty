@@ -1,0 +1,728 @@
+---
+# Nodes: node-exporter (labelled by IP, joined to node_uname_info for the
+# name), kube-state-metrics for requests and allocatable, and cAdvisor for pods.
+#
+#   - Memory reserved excludes finished pods, whose requests the scheduler no
+#     longer counts.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: nodes
+  project: kube-system
+spec:
+  display:
+    name: Nodes
+    description: 'The three Talos nodes: CPU, memory and what Kubernetes has reserved of it, disks, network, temperatures, and who holds the Intel GPUs.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    ready:
+      kind: Panel
+      spec:
+        display:
+          name: Nodes ready
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.6
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(kube_node_status_condition{condition="Ready", status="true"}) / count(kube_node_info)
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU used
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.7
+                  color: '#ffb300'
+                - value: 0.9
+                  color: '#e53935'
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: 1 - avg(rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[$__rate_interval]))
+    mem:
+      kind: Panel
+      spec:
+        display:
+          name: Memory used
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.75
+                  color: '#ffb300'
+                - value: 0.9
+                  color: '#e53935'
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: 1 - sum(node_memory_MemAvailable_bytes{job="node-exporter"}) / sum(node_memory_MemTotal_bytes{job="node-exporter"})
+    memReq:
+      kind: Panel
+      spec:
+        display:
+          name: Memory reserved
+          description: Busiest node's memory requests against what it can allocate. Requests are reserved whether used or not; past ~85% a drain cannot fit one node's pods on the other two, which is what stalls a tuppr upgrade.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.8
+                  color: '#ffb300'
+                - value: 0.9
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(sum by (node) (kube_pod_container_resource_requests{resource="memory"} unless on (pod, namespace) kube_pod_status_phase{phase=~"Succeeded|Failed"} == 1) / sum by (node) (kube_node_status_allocatable{resource="memory"}))
+    hottest:
+      kind: Panel
+      spec:
+        display:
+          name: Hottest sensor
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: celsius
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 70
+                  color: '#ffb300'
+                - value: 85
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(node_hwmon_temp_celsius{job="node-exporter"})
+    uptime:
+      kind: Panel
+      spec:
+        display:
+          name: Shortest uptime
+          description: Time since the most recent node boot -- a reboot, an upgrade, or a power cut.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: min(time() - node_boot_time_seconds{job="node-exporter"})
+    cpuByNode:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((1 - avg by (instance) (rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[$__rate_interval]))) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    load:
+      kind: Panel
+      spec:
+        display:
+          name: Load per core
+          description: 5-minute load average divided by cores. Above 1 means work is queuing for CPU.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 2
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((max by (instance) (node_load5{job="node-exporter"}) / count by (instance) (node_cpu_seconds_total{job="node-exporter", mode="idle"})) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    memByNode:
+      kind: Panel
+      spec:
+        display:
+          name: Memory used
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((1 - node_memory_MemAvailable_bytes{job="node-exporter"} / node_memory_MemTotal_bytes{job="node-exporter"}) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    reserved:
+      kind: Panel
+      spec:
+        display:
+          name: Memory reserved by requests
+          description: A memory limit with no request reserves the whole limit, so this can sit far above real usage. See CLAUDE.md on sizing limits.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (node) (kube_pod_container_resource_requests{resource="memory"} unless on (pod, namespace) kube_pod_status_phase{phase=~"Succeeded|Failed"} == 1) / sum by (node) (kube_node_status_allocatable{resource="memory"})
+                  seriesNameFormat: '{{node}}'
+    topCpu:
+      kind: Panel
+      spec:
+        display:
+          name: Top pods by CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: decimal
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=""}[$__rate_interval])))
+                  seriesNameFormat: '{{namespace}}/{{pod}}'
+    topMem:
+      kind: Panel
+      spec:
+        display:
+          name: Top pods by memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - last
+                - max
+            yAxis:
+              format:
+                unit: bytes
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (namespace, pod) (container_memory_working_set_bytes{container!=""}))
+                  seriesNameFormat: '{{namespace}}/{{pod}}'
+    rootfs:
+      kind: Panel
+      spec:
+        display:
+          name: Filesystem used
+          description: 'Talos'' EPHEMERAL partition: container images, logs, and the Longhorn disk.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((1 - node_filesystem_avail_bytes{job="node-exporter", mountpoint="/var"} / node_filesystem_size_bytes{job="node-exporter", mountpoint="/var"}) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}} /var'
+    diskIo:
+      kind: Panel
+      spec:
+        display:
+          name: Disk busy
+          description: Share of time the busiest disk had I/O in flight. Longhorn replica rebuilds show up here.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((max by (instance) (rate(node_disk_io_time_seconds_total{job="node-exporter", device=~"nvme.*|sd.*"}[$__rate_interval]))) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    net:
+      kind: Panel
+      spec:
+        display:
+          name: Network
+          description: Physical interfaces only; pod-to-pod traffic on the same node never leaves it.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((sum by (instance) (rate(node_network_receive_bytes_total{job="node-exporter", device!~"lo|cilium.*|lxc.*|veth.*"}[$__rate_interval]))) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: in {{nodename}}
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((sum by (instance) (rate(node_network_transmit_bytes_total{job="node-exporter", device!~"lo|cilium.*|lxc.*|veth.*"}[$__rate_interval]))) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: out {{nodename}}
+    cpuTemp:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+          description: Hottest core per node. The N150 and the 8500T are fanless-adjacent mini PCs; sustained 85+ means throttling.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: celsius
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((node_hwmon_temp_celsius{job="node-exporter"} * on (instance, chip) group_left (chip_name) node_hwmon_chip_names{chip_name=~"coretemp|k10temp"}) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    nvmeTemp:
+      kind: Panel
+      spec:
+        display:
+          name: NVMe
+          description: The disks Longhorn lives on. Past ~70 most NVMe drives start throttling writes.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: celsius
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((node_hwmon_temp_celsius{job="node-exporter"} * on (instance, chip) group_left (chip_name) node_hwmon_chip_names{chip_name="nvme"}) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    gpuTemp:
+      kind: Panel
+      spec:
+        display:
+          name: GPU
+          description: Only the AMD iGPU on asus01 has a hwmon sensor; the Intel iGPUs report through coretemp.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: celsius
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (nodename) ((node_hwmon_temp_celsius{job="node-exporter"} * on (instance, chip) group_left (chip_name) node_hwmon_chip_names{chip_name="amdgpu"}) * on (instance) group_left (nodename) node_uname_info{job="node-exporter"})
+                  seriesNameFormat: '{{nodename}}'
+    gpuGuide:
+      kind: Panel
+      spec:
+        display:
+          name: About these panels
+        plugin:
+          kind: Markdown
+          spec:
+            text: |-
+              These panels show **who holds** each node's Intel GPU, not how busy it is: nothing in the
+              cluster exports Intel GPU load. That would take an exporter such as intel_gpu_top or XPU Manager.
+
+              Requesting `gpu.intel.com/i915` is what grants a container the render device; a pod asking for
+              one where allocated already equals allocatable stays Pending.
+
+              twenty-asus01's Radeon Vega is not a supported ROCm target, so it advertises no GPU at all.
+        queries: []
+    gpuAlloc:
+      kind: Panel
+      spec:
+        display:
+          name: GPU holders
+          description: Containers requesting gpu.intel.com/i915.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: pod
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - pod
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: pod
+                header: Pod
+                enableSorting: true
+              - name: 'value #1'
+                header: Node
+                enableSorting: true
+                hide: true
+              - name: 'value #2'
+                header: GPUs
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'node #1'
+                header: Node
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pod, node) (kube_pod_container_resource_requests{resource="gpu_intel_com_i915"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (kube_pod_container_resource_requests{resource="gpu_intel_com_i915"})
+    gpuCap:
+      kind: Panel
+      spec:
+        display:
+          name: Allocated vs capacity
+          description: A pod asking for a GPU on a node where these are equal stays Pending.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (node) (kube_pod_container_resource_requests{resource="gpu_intel_com_i915"})
+                  seriesNameFormat: used {{node}}
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (kube_node_status_allocatable{resource="gpu_intel_com_i915"})
+                  seriesNameFormat: allocatable {{node}}
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/ready'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/mem'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/memReq'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/hottest'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/uptime'
+    - kind: Grid
+      spec:
+        display:
+          title: CPU and memory
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/cpuByNode'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/load'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/memByNode'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/reserved'
+          - x: 0
+            "y": 16
+            width: 12
+            height: 9
+            content:
+              $ref: '#/spec/panels/topCpu'
+          - x: 12
+            "y": 16
+            width: 12
+            height: 9
+            content:
+              $ref: '#/spec/panels/topMem'
+    - kind: Grid
+      spec:
+        display:
+          title: Disk and network
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/rootfs'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/diskIo'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/net'
+    - kind: Grid
+      spec:
+        display:
+          title: Temperatures
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/cpuTemp'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/nvmeTemp'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gpuTemp'
+    - kind: Grid
+      spec:
+        display:
+          title: GPU
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gpuGuide'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gpuAlloc'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gpuCap'

@@ -1,0 +1,256 @@
+---
+# Spegel (job="spegel"). A miss is normal for an image no node has pulled
+# before; a node pulling something its neighbours already have should hit.
+#
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: spegel
+  project: kube-system
+spec:
+  display:
+    name: Spegel
+    description: 'The peer-to-peer image mirror: how many pulls each node served from a neighbour instead of the WAN.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    hitRatio:
+      kind: Panel
+      spec:
+        display:
+          name: Served by peers
+          description: Share of image blob requests a neighbouring node answered over the selected range. Misses go to the upstream registry.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(spegel_mirror_requests_total{cache="hit"}[$__range])) / sum(increase(spegel_mirror_requests_total[$__range]))
+    requests:
+      kind: Panel
+      spec:
+        display:
+          name: Mirror requests
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum(increase(spegel_mirror_requests_total[$__range])))
+    keys:
+      kind: Panel
+      spec:
+        display:
+          name: Layers advertised
+          description: Image layers the busiest node offers to its peers.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(spegel_advertised_keys)
+    peers:
+      kind: Panel
+      spec:
+        display:
+          name: Peer connections
+          description: libp2p connections between the Spegel instances.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(libp2p_rcmgr_connections{scope="system"})
+    byRegistry:
+      kind: Panel
+      spec:
+        display:
+          name: Requests by registry
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (registry, cache) (rate(spegel_mirror_requests_total[$__rate_interval])) > 0
+                  seriesNameFormat: '{{registry}} {{cache}}'
+    bytes:
+      kind: Panel
+      spec:
+        display:
+          name: Bytes served to peers
+          description: What each node sent its neighbours -- WAN traffic that did not happen.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (rate(http_response_size_bytes_sum{job="spegel"}[$__rate_interval]))
+                  seriesNameFormat: '{{pod}}'
+    resolve:
+      kind: Panel
+      spec:
+        display:
+          name: Peer lookup time
+          description: Time to find which peer has a layer.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(spegel_resolve_duration_seconds_sum[$__rate_interval])) / sum(rate(spegel_resolve_duration_seconds_count[$__rate_interval]))
+                  seriesNameFormat: avg
+    keysByNode:
+      kind: Panel
+      spec:
+        display:
+          name: Layers advertised
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+                shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pod) (spegel_advertised_keys)
+                  seriesNameFormat: '{{pod}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/hitRatio'
+          - x: 6
+            "y": 0
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/requests'
+          - x: 12
+            "y": 0
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/keys'
+          - x: 18
+            "y": 0
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/peers'
+    - kind: Grid
+      spec:
+        display:
+          title: Mirror
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/byRegistry'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/bytes'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/resolve'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/keysByNode'

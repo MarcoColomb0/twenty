@@ -20,3 +20,27 @@
   spec:
     display:
       name: database
+- kind: Project
+  metadata:
+    name: security
+  spec:
+    display:
+      name: security
+- kind: Project
+  metadata:
+    name: kube-system
+  spec:
+    display:
+      name: kube-system
+- kind: Project
+  metadata:
+    name: flux-system
+  spec:
+    display:
+      name: flux-system
+- kind: Project
+  metadata:
+    name: system-upgrade
+  spec:
+    display:
+      name: system-upgrade

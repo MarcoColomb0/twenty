@@ -1,0 +1,336 @@
+---
+# tuppr (ServiceMonitor from its chart, monitoring.serviceMonitor). Phases are
+# one series per phase, value 1 for the current one.
+#
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: tuppr
+  project: system-upgrade
+spec:
+  display:
+    name: Upgrades
+    description: 'tuppr''s Talos and Kubernetes rollouts: what each node runs, where a rollout is, and when the last one finished.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    talosPhase:
+      kind: Panel
+      spec:
+        display:
+          name: Talos upgrade
+          description: Phase of the TalosUpgrade. Draining that does not move for many minutes is the Longhorn PDB trap in CLAUDE.md.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: phase
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (phase) (tuppr_talos_upgrade_phase == 1)
+    k8sPhase:
+      kind: Panel
+      spec:
+        display:
+          name: Kubernetes upgrade
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: phase
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (phase) (tuppr_kubernetes_upgrade_phase == 1)
+    progress:
+      kind: Panel
+      spec:
+        display:
+          name: Nodes done
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(tuppr_talos_upgrade_nodes_completed) / max(tuppr_talos_upgrade_nodes)
+    failed:
+      kind: Panel
+      spec:
+        display:
+          name: Nodes failed
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(tuppr_talos_upgrade_nodes_failed)
+    lastTalos:
+      kind: Panel
+      spec:
+        display:
+          name: Last Talos upgrade
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: time() - max(tuppr_upgrade_last_completion_timestamp_seconds{upgrade_type="talos"})
+    lastK8s:
+      kind: Panel
+      spec:
+        display:
+          name: Last Kubernetes upgrade
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: time() - max(tuppr_upgrade_last_completion_timestamp_seconds{upgrade_type="kubernetes"})
+    versions:
+      kind: Panel
+      spec:
+        display:
+          name: Versions per node
+          description: What each node runs right now, as tuppr sees it. Mixed versions are expected mid-rollout and nowhere else.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: node
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - node
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: node
+                header: Node
+                enableSorting: true
+              - name: value
+                header: Info
+                enableSorting: true
+                sort: desc
+              - name: 'talos_version #1'
+                header: Talos
+              - name: 'kubernetes_version #1'
+                header: Kubernetes
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node, talos_version, kubernetes_version) (tuppr_node_info)
+    phases:
+      kind: Panel
+      spec:
+        display:
+          name: Talos rollout phases
+          description: Which phase the rollout was in over time. Each node goes Draining, Upgrading, Rebooting, HealthChecking.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (phase) (tuppr_talos_upgrade_phase == 1)
+                  seriesNameFormat: '{{phase}}'
+    nodesProgress:
+      kind: Panel
+      spec:
+        display:
+          name: Nodes completed
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(tuppr_talos_upgrade_nodes_completed)
+                  seriesNameFormat: completed
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(tuppr_talos_upgrade_nodes_failed)
+                  seriesNameFormat: failed
+    jobs:
+      kind: Panel
+      spec:
+        display:
+          name: Upgrade jobs running
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (upgrade_type) (tuppr_upgrade_jobs_active)
+                  seriesNameFormat: '{{upgrade_type}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/talosPhase'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/k8sPhase'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/progress'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/failed'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/lastTalos'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/lastK8s'
+    - kind: Grid
+      spec:
+        display:
+          title: Nodes
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 6
+            content:
+              $ref: '#/spec/panels/versions'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 6
+            content:
+              $ref: '#/spec/panels/phases'
+          - x: 0
+            "y": 6
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/nodesProgress'
+          - x: 12
+            "y": 6
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/jobs'
+  links:
+    - name: tuppr
+      url: https://github.com/home-operations/tuppr
+      targetBlank: true

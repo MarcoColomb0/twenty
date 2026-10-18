@@ -18,8 +18,13 @@ spec:
       instance:
         enabled: true
         name: pocket-id
+        # Off: the chart's ServiceMonitor selects app.kubernetes.io/name and
+        # /instance, but the Service the operator builds carries only
+        # managed-by, and spec.labels reaches the pods, not the Service. It
+        # matched nothing and Pocket ID was never scraped. podmonitor.yaml
+        # selects the pods instead.
         serviceMonitor:
-          enabled: true
+          enabled: false
         spec:
           appUrl: https://id.${SECRET_DOMAIN}
 

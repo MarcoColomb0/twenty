@@ -1,0 +1,493 @@
+---
+# Cilium agent, operator and Hubble metrics (enabled in kube-system/cilium).
+#
+#   - Hubble metrics are per node; sums are cluster-wide.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: cilium
+  project: kube-system
+spec:
+  display:
+    name: Cilium
+    description: 'The CNI: native routing with kube-proxy replacement, L2 announcements for the LoadBalancer IPs, and Hubble''s view of every flow.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    agents:
+      kind: Panel
+      spec:
+        display:
+          name: Agents up
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(up{job="cilium-agent"}) / count(up{job="cilium-agent"})
+    unreachable:
+      kind: Panel
+      spec:
+        display:
+          name: Unreachable nodes
+          description: Nodes a Cilium agent cannot reach over the health check -- pod traffic between them is broken.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cilium_unreachable_nodes)
+    endpoints:
+      kind: Panel
+      spec:
+        display:
+          name: Endpoints ready
+          description: Pods whose datapath is programmed. Endpoints stuck regenerating cannot send traffic.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.95
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cilium_endpoint_state{endpoint_state="ready"}) / sum(cilium_endpoint_state)
+    failing:
+      kind: Panel
+      spec:
+        display:
+          name: Failing controllers
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cilium_controllers_failing)
+    dropRate:
+      kind: Panel
+      spec:
+        display:
+          name: Dropped
+          description: Share of flows Cilium dropped over the selected range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 3
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(hubble_flows_processed_total{verdict="DROPPED"}[$__range])) / sum(rate(hubble_flows_processed_total[$__range]))
+    version:
+      kind: Panel
+      spec:
+        display:
+          name: Version
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: version
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (version) (cilium_version)
+    flows:
+      kind: Panel
+      spec:
+        display:
+          name: Flows by protocol
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: flows/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (protocol) (rate(hubble_flows_processed_total[$__rate_interval]))
+                  seriesNameFormat: '{{protocol}}'
+    bytes:
+      kind: Panel
+      spec:
+        display:
+          name: Forwarded bytes
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (direction) (rate(cilium_forward_bytes_total[$__rate_interval]))
+                  seriesNameFormat: '{{direction}}'
+    drops:
+      kind: Panel
+      spec:
+        display:
+          name: Drops by reason
+          description: UNSUPPORTED_L3_PROTOCOL is IPv6 the datapath does not route -- harmless here. SERVICE_BACKEND_NOT_FOUND is a request to a Service with no ready pods; POLICY_DENIED is a NetworkPolicy at work.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: packets/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (reason) (rate(hubble_drop_total[$__rate_interval])) > 0
+                  seriesNameFormat: '{{reason}}'
+    tcpFlags:
+      kind: Panel
+      spec:
+        display:
+          name: TCP flags
+          description: RST climbing against SYN means connections are being refused or torn down.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: packets/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (flag) (rate(hubble_tcp_flags_total[$__rate_interval]))
+                  seriesNameFormat: '{{flag}}'
+    conntrack:
+      kind: Panel
+      spec:
+        display:
+          name: Conntrack entries
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+                shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (family, protocol) (cilium_datapath_conntrack_gc_entries{status="alive"})
+                  seriesNameFormat: '{{family}} {{protocol}}'
+    mapPressure:
+      kind: Panel
+      spec:
+        display:
+          name: BPF map pressure
+          description: Fullest eBPF maps. At 100% new connections or endpoints are refused.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(5, max by (map_name) (cilium_bpf_map_pressure))
+                  seriesNameFormat: '{{map_name}}'
+    lbipam:
+      kind: Panel
+      spec:
+        display:
+          name: LB-IPAM
+          description: LoadBalancer Services (gateways, k8s-gateway, blocky) and whether each got its pinned address.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cilium_operator_lbipam_services_matching)
+                  seriesNameFormat: services with an IP
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cilium_operator_lbipam_services_unsatisfied)
+                  seriesNameFormat: waiting for an IP
+    errors:
+      kind: Panel
+      spec:
+        display:
+          name: Agent warnings and errors
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: /s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (level, subsystem) (rate(cilium_errors_warnings_total[$__rate_interval])) > 0
+                  seriesNameFormat: '{{level}} {{subsystem}}'
+    policy:
+      kind: Panel
+      spec:
+        display:
+          name: Policy changes
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: /s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cilium_policy_change_total[$__rate_interval]))
+                  seriesNameFormat: changes
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/agents'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/unreachable'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/endpoints'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/failing'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/dropRate'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/version'
+    - kind: Grid
+      spec:
+        display:
+          title: Traffic
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/flows'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/bytes'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/drops'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/tcpFlags'
+    - kind: Grid
+      spec:
+        display:
+          title: Datapath
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/conntrack'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/mapPressure'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/lbipam'
+          - x: 0
+            "y": 7
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/errors'
+          - x: 12
+            "y": 7
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/policy'
+  links:
+    - name: Cilium metrics
+      url: https://docs.cilium.io/en/stable/observability/metrics/
+      targetBlank: true

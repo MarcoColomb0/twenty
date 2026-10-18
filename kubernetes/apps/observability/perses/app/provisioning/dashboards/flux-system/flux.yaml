@@ -1,0 +1,509 @@
+---
+# Flux: flux-operator's flux_resource_info (one series per Flux object with its
+# ready/suspended state) and the controllers' own metrics via
+# flux-instance/app/podmonitor.yaml.
+#
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: flux
+  project: flux-system
+spec:
+  display:
+    name: Flux
+    description: 'GitOps itself: whether every Kustomization, HelmRelease and source is ready, how long reconciles take, and which controller is struggling.'
+  duration: 6h
+  refreshInterval: 1m
+  variables:
+    - kind: ListVariable
+      spec:
+        name: kind
+        display:
+          name: Kind
+          hidden: false
+        allowMultiple: true
+        allowAllValue: true
+        customAllValue: .*
+        defaultValue: $__all
+        sort: alphabetical-asc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: kind
+            matchers:
+              - flux_resource_info
+  panels:
+    notReady:
+      kind: Panel
+      spec:
+        display:
+          name: Not ready
+          description: Flux objects whose last reconcile failed or is stuck. The table below names them.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(flux_resource_info{kind=~"$kind", ready!="True", suspended="False"}) or vector(0)
+    suspended:
+      kind: Panel
+      spec:
+        display:
+          name: Suspended
+          description: Objects someone paused. Nothing in git reaches them until resumed.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(flux_resource_info{kind=~"$kind", suspended="True"}) or vector(0)
+    total:
+      kind: Panel
+      spec:
+        display:
+          name: Objects
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(flux_resource_info{kind=~"$kind"})
+    errors:
+      kind: Panel
+      spec:
+        display:
+          name: Reconcile errors
+          description: Failed reconciles across the four controllers in the selected range. Transient ones retry; a steady count is one object failing every interval.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 20
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(controller_runtime_reconcile_errors_total{job="flux-system/flux-controllers"}[$__range]))
+    instance:
+      kind: Panel
+      spec:
+        display:
+          name: Flux instance
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            mappings:
+              - kind: Value
+                spec:
+                  value: "1"
+                  result:
+                    value: Ready
+                    color: '#43a047'
+              - kind: Value
+                spec:
+                  value: "0"
+                  result:
+                    value: Not ready
+                    color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(flux_instance_info{ready="True"}) or vector(0)
+    version:
+      kind: Panel
+      spec:
+        display:
+          name: Distribution
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: version
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (version) (label_replace(flux_instance_info, "version", "$1", "revision", "(v[^@]+)@.*"))
+    problems:
+      kind: Panel
+      spec:
+        display:
+          name: Objects that need attention
+          description: Everything not ready or suspended, with Flux's reason. Empty is the goal.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: name
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - name
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: name
+                header: Name
+                enableSorting: true
+              - name: value
+                header: Ready
+                enableSorting: true
+                sort: desc
+              - name: 'kind #1'
+                header: Kind
+              - name: 'exported_namespace #1'
+                header: Namespace
+              - name: 'reason #1'
+                header: Reason
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name, exported_namespace, kind, reason) (flux_resource_info{kind=~"$kind", ready!="True"} or flux_resource_info{kind=~"$kind", suspended="True"})
+    readyOverTime:
+      kind: Panel
+      spec:
+        display:
+          name: Ready by kind
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count by (kind) (flux_resource_info{kind=~"$kind", ready="True"})
+                  seriesNameFormat: '{{kind}}'
+    notReadyOverTime:
+      kind: Panel
+      spec:
+        display:
+          name: Not ready by kind
+          description: A bar after a merge that clears within a few minutes is a normal rollout; one that stays is a broken manifest.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count by (kind) (flux_resource_info{kind=~"$kind", ready!="True"}) > 0
+                  seriesNameFormat: '{{kind}}'
+    slowest:
+      kind: Panel
+      spec:
+        display:
+          name: Slowest reconciles
+          description: Average time per reconcile. HelmReleases with wait enabled sit high while pods roll out.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: seconds
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, max by (kind, name) (rate(gotk_reconcile_duration_seconds_sum{job="flux-system/flux-controllers", kind=~"$kind"}[$__rate_interval]) / rate(gotk_reconcile_duration_seconds_count{job="flux-system/flux-controllers", kind=~"$kind"}[$__rate_interval])))
+                  seriesNameFormat: '{{kind}} {{name}}'
+    byController:
+      kind: Panel
+      spec:
+        display:
+          name: Reconciles by controller
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: /s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (controller, result) (rate(controller_runtime_reconcile_total{job="flux-system/flux-controllers"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{controller}} {{result}}'
+    errorsByController:
+      kind: Panel
+      spec:
+        display:
+          name: Errors by controller
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (controller) (increase(controller_runtime_reconcile_errors_total{job="flux-system/flux-controllers"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{controller}}'
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 3
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="flux-system", container!=""}[$__rate_interval]))
+                  seriesNameFormat: '{{pod}}'
+    mem:
+      kind: Panel
+      spec:
+        display:
+          name: Memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (container_memory_working_set_bytes{namespace="flux-system", container!=""})
+                  seriesNameFormat: '{{pod}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/notReady'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/suspended'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/total'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/errors'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/instance'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/version'
+    - kind: Grid
+      spec:
+        display:
+          title: Objects
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 7
+            content:
+              $ref: '#/spec/panels/problems'
+          - x: 0
+            "y": 7
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/readyOverTime'
+          - x: 12
+            "y": 7
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/notReadyOverTime'
+    - kind: Grid
+      spec:
+        display:
+          title: Reconciles
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 9
+            content:
+              $ref: '#/spec/panels/slowest'
+          - x: 0
+            "y": 9
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/byController'
+          - x: 12
+            "y": 9
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/errorsByController'
+    - kind: Grid
+      spec:
+        display:
+          title: Resources
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/mem'

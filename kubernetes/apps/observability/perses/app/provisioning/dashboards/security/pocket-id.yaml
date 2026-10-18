@@ -1,0 +1,412 @@
+---
+# Pocket ID (its OpenTelemetry exporter on :9464, via podmonitor.yaml in
+# security/pocket-id-operator) and pocket-id-operator.
+#
+#   - Routes are Pocket ID's own route templates (/api/oidc/clients/:id), so
+#     the cardinality stays fixed however many clients exist.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: pocket-id
+  project: security
+spec:
+  display:
+    name: Pocket ID
+    description: 'The single sign-on in front of every app: passkey logins, OIDC token grants, errors and latency, plus the operator that keeps clients and groups in sync with git.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    logins:
+      kind: Panel
+      spec:
+        display:
+          name: Passkey logins
+          description: Completed passkey sign-ins in the selected range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum(increase(http_server_request_duration_seconds_count{http_route="/api/webauthn/login/finish", http_response_status_code=~"2.."}[$__range])))
+    failedLogins:
+      kind: Panel
+      spec:
+        display:
+          name: Failed logins
+          description: Passkey sign-ins that finished with an error.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 20
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum(increase(http_server_request_duration_seconds_count{http_route="/api/webauthn/login/finish", http_response_status_code!~"2.."}[$__range]))) or vector(0)
+    tokens:
+      kind: Panel
+      spec:
+        display:
+          name: Tokens issued
+          description: 'Successful code-for-token exchanges: one per app login.'
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum(increase(http_server_request_duration_seconds_count{http_route="/api/oidc/token", http_response_status_code=~"2.."}[$__range])))
+    errors:
+      kind: Panel
+      spec:
+        display:
+          name: 5xx
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.001
+                  color: '#ffb300'
+                - value: 0.01
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[$__range])) / sum(increase(http_server_request_duration_seconds_count[$__range]))
+    p95:
+      kind: Panel
+      spec:
+        display:
+          name: p95 latency
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.5
+                  color: '#ffb300'
+                - value: 2
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[$__range])))
+    notReady:
+      kind: Panel
+      spec:
+        display:
+          name: Resources not ready
+          description: OIDC clients, groups or the instance the operator could not reconcile. An app whose client is not ready cannot log anyone in.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(pocketid_operator_resource_ready == 0) or vector(0)
+    byRoute:
+      kind: Panel
+      spec:
+        display:
+          name: Requests by route
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (http_route) (rate(http_server_request_duration_seconds_count[$__rate_interval])))
+                  seriesNameFormat: '{{http_route}}'
+    byStatus:
+      kind: Panel
+      spec:
+        display:
+          name: Responses by status
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count[$__rate_interval]))
+                  seriesNameFormat: '{{http_response_status_code}}'
+    latency:
+      kind: Panel
+      spec:
+        display:
+          name: Latency by route (p95)
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(8, histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[$__rate_interval]))))
+                  seriesNameFormat: '{{http_route}}'
+    resources:
+      kind: Panel
+      spec:
+        display:
+          name: Managed resources
+          description: Every PocketIDOIDCClient and PocketIDUserGroup in the cluster. Allowed groups 0 on a client means any Pocket ID user can log in to that app.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: name
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - name
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: name
+                header: Name
+                enableSorting: true
+              - name: 'value #1'
+                header: Ready
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #2'
+                header: Members
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #3'
+                header: Allowed groups
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name) (pocketid_operator_resource_ready)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name) (pocketid_operator_usergroup_member_count)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name) (pocketid_operator_oidcclient_allowed_group_count)
+    apiCalls:
+      kind: Panel
+      spec:
+        display:
+          name: Operator calls to Pocket ID
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (operation, result) (rate(pocketid_operator_pocketid_api_requests_total[$__rate_interval])) > 0
+                  seriesNameFormat: '{{operation}} {{result}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/logins'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/failedLogins'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/tokens'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/errors'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/p95'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/notReady'
+    - kind: Grid
+      spec:
+        display:
+          title: Requests
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 9
+            content:
+              $ref: '#/spec/panels/byRoute'
+          - x: 0
+            "y": 9
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/byStatus'
+          - x: 12
+            "y": 9
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/latency'
+    - kind: Grid
+      spec:
+        display:
+          title: Operator
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 10
+            content:
+              $ref: '#/spec/panels/resources'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 10
+            content:
+              $ref: '#/spec/panels/apiCalls'
