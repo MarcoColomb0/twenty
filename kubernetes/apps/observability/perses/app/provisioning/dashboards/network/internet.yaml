@@ -1,0 +1,327 @@
+---
+# WAN and LAN latency from the blackbox-exporter ICMP Probes in observability
+# (probe/observability/latency-router and -wan). The targets and the reasoning
+# behind them are in kubernetes/apps/observability/blackbox-exporter/app/probe.yaml.
+#
+#   - Probes run every 5s, so RTT panels take max_over_time per point instead of
+#     letting a zoomed-out graph average the spikes away.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: internet
+  project: network
+spec:
+  display:
+    name: Internet
+    description: 'ICMP probes every 5s from the cluster to the router, across the subnet boundary, and to two public resolvers: is it the line, the router, or the LAN?'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    guide:
+      kind: Panel
+      spec:
+        display:
+          name: How to read this
+        plugin:
+          kind: Markdown
+          spec:
+            text: |-
+              | Target | Path |
+              |---|---|
+              | **192.168.1.1** | the D-Link router, one hop, no DSL |
+              | **192.168.1.2** | rustfs, same router across the subnet boundary -- the backup path |
+              | **1.1.1.1**, **8.8.8.8** | out over the DSL line |
+
+              - WAN spikes while both LAN targets stay flat: **the line** -- retrains, or the modem queue filling (bufferbloat).
+              - All four spike together: **the router** running out of CPU routing between subnets.
+              - Only 192.168.1.2 spikes: inter-subnet routing load, which is what backups hit.
+
+              Probes run from the cluster, so a fault local to one PC's port or NIC will not show here.
+        queries: []
+    rttNow:
+      kind: Panel
+      spec:
+        display:
+          name: RTT now
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: seconds
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", phase="rtt"})
+                  seriesNameFormat: '{{instance}}'
+    lossRange:
+      kind: Panel
+      spec:
+        display:
+          name: Packet loss in range
+          description: Share of probes that got no reply over the selected range.
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: 1 - avg by (instance) (avg_over_time(probe_success{job=~"probe/observability/latency-.*"}[$__range]))
+                  seriesNameFormat: '{{instance}}'
+    rtt:
+      kind: Panel
+      spec:
+        display:
+          name: Round trip time
+          description: Worst probe per point, so a 400ms spike between two 5s samples is not averaged away when zoomed out.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (max_over_time(probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", phase="rtt"}[$__interval]))
+                  seriesNameFormat: '{{instance}}'
+    rttLan:
+      kind: Panel
+      spec:
+        display:
+          name: LAN round trip
+          description: Router and cross-subnet only, on their own scale.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (max_over_time(probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", scope="lan", phase="rtt"}[$__interval]))
+                  seriesNameFormat: '{{instance}}'
+    jitter:
+      kind: Panel
+      spec:
+        display:
+          name: Jitter
+          description: Standard deviation of RTT over 5 minutes. Calls and games suffer from this more than from a high but steady RTT.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (stddev_over_time(probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", phase="rtt"}[5m]))
+                  seriesNameFormat: '{{instance}}'
+    loss:
+      kind: Panel
+      spec:
+        display:
+          name: Packet loss
+          description: Share of failed probes over a sliding 5 minutes.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: 1 - avg by (instance) (avg_over_time(probe_success{job=~"probe/observability/latency-.*"}[5m]))
+                  seriesNameFormat: '{{instance}}'
+    lossTable:
+      kind: Panel
+      spec:
+        display:
+          name: Per target, selected range
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: instance
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - instance
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: instance
+                header: Instance
+                enableSorting: true
+              - name: 'value #1'
+                header: Loss
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: percent-decimal
+                  decimalPlaces: 2
+              - name: 'value #2'
+                header: Median
+                enableSorting: true
+                format:
+                  unit: seconds
+                  decimalPlaces: 1
+              - name: 'value #3'
+                header: p95
+                enableSorting: true
+                format:
+                  unit: seconds
+                  decimalPlaces: 1
+              - name: 'value #4'
+                header: Worst
+                enableSorting: true
+                format:
+                  unit: seconds
+                  decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: 1 - avg by (instance) (avg_over_time(probe_success{job=~"probe/observability/latency-.*"}[$__range]))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (quantile_over_time(0.5, probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", phase="rtt"}[$__range]))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (quantile_over_time(0.95, probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", phase="rtt"}[$__range]))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (instance) (max_over_time(probe_icmp_duration_seconds{job=~"probe/observability/latency-.*", phase="rtt"}[$__range]))
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Now
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 12
+            content:
+              $ref: '#/spec/panels/guide'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 12
+            content:
+              $ref: '#/spec/panels/rttNow'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 12
+            content:
+              $ref: '#/spec/panels/lossRange'
+    - kind: Grid
+      spec:
+        display:
+          title: Latency
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 9
+            content:
+              $ref: '#/spec/panels/rtt'
+          - x: 0
+            "y": 9
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/rttLan'
+          - x: 12
+            "y": 9
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/jitter'
+    - kind: Grid
+      spec:
+        display:
+          title: Loss
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/loss'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/lossTable'

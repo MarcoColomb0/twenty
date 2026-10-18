@@ -1,0 +1,1302 @@
+---
+# Envoy Gateway: envoy-internal (LAN, tailnet) and envoy-external (Cloudflare tunnel, CrowdSec in front).
+# Scraped by envoy-gateway's own PodMonitor (job="network/envoy-proxy").
+#
+#   - Gateways are told apart by pod name. $gateway is the gateway name, so
+#     pod=~"$gateway-.*" selects its proxies; "All" is envoy-(external|internal).
+#   - Routes are Envoy clusters named httproute/<namespace>/<name>/rule/<n>;
+#     label_replace lifts <namespace>/<name> into a "route" label so rules of the
+#     same HTTPRoute add up.
+#   - Envoy's histograms are in milliseconds; every latency query divides by 1000
+#     so the panels can use the seconds unit.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: gateways
+  project: network
+spec:
+  display:
+    name: Gateways
+    description: Envoy Gateway's two proxies -- envoy-internal (LAN and tailnet) and envoy-external (Cloudflare tunnel, behind CrowdSec) -- per gateway and per route.
+  duration: 6h
+  refreshInterval: 1m
+  variables:
+    - kind: ListVariable
+      spec:
+        name: gateway
+        display:
+          name: Gateway
+          hidden: false
+        allowMultiple: true
+        allowAllValue: true
+        customAllValue: envoy-(external|internal)
+        defaultValue: $__all
+        sort: alphabetical-asc
+        plugin:
+          kind: PrometheusPromQLVariable
+          spec:
+            expr: label_replace(envoy_server_live{job="network/envoy-proxy"}, "gateway", "$1", "pod", "(envoy-[a-z]+)-.*")
+            labelName: gateway
+    - kind: ListVariable
+      spec:
+        name: route
+        display:
+          name: Route
+          hidden: false
+          description: namespace/HTTPRoute. Filters the per-route panels; the overview counts everything the gateway served.
+        allowMultiple: true
+        allowAllValue: true
+        customAllValue: .*
+        defaultValue: $__all
+        sort: alphabetical-asc
+        plugin:
+          kind: PrometheusPromQLVariable
+          spec:
+            expr: label_replace(envoy_cluster_upstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/.*"}, "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")
+            labelName: route
+  panels:
+    rps:
+      kind: Panel
+      spec:
+        display:
+          name: Requests / s
+          description: Requests clients sent to the selected gateways, plain-HTTP redirects included.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 2
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_downstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"}[$__rate_interval]))
+    success:
+      kind: Panel
+      spec:
+        display:
+          name: Non-5xx
+          description: Share of responses over the selected range that were not a 5xx.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.99
+                  color: '#ffb300'
+                - value: 0.999
+                  color: '#43a047'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: 1 - sum(increase(envoy_http_downstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443", envoy_response_code_class="5"}[$__range])) / sum(increase(envoy_http_downstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"}[$__range]))
+    clientErrors:
+      kind: Panel
+      spec:
+        display:
+          name: 4xx
+          description: Share of 4xx over the selected range. On envoy-external this includes every request the CrowdSec bouncer refused (403).
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(envoy_http_downstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443", envoy_response_code_class="4"}[$__range])) / sum(increase(envoy_http_downstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"}[$__range]))
+    p95:
+      kind: Panel
+      spec:
+        display:
+          name: p95 latency
+          description: 95th percentile of full request time on the HTTPS listener over the selected range, first byte in to last byte out -- long downloads and streaming responses pull it up.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 3
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__range]))) / 1000
+    activeConns:
+      kind: Panel
+      spec:
+        display:
+          name: Open connections
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(envoy_http_downstream_cx_active{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"})
+    http3:
+      kind: Panel
+      spec:
+        display:
+          name: HTTP/3
+          description: Share of HTTPS requests that arrived over QUIC.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(envoy_http_downstream_rq_http3_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__range])) / sum(increase(envoy_http_downstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__range]))
+    proxiesUp:
+      kind: Panel
+      spec:
+        display:
+          name: Proxies up
+          description: Envoy pods Prometheus can scrape, against the Deployments' desired replicas.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.5
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(up{job="network/envoy-proxy", pod=~"$gateway-.*"}) / sum(kube_deployment_spec_replicas{namespace="network", deployment=~"$gateway"})
+    unhealthy:
+      kind: Panel
+      spec:
+        display:
+          name: Routes with no backend
+          description: Routes whose backend currently has zero healthy endpoints -- every request to them fails with 503.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(sum by (envoy_cluster_name) (envoy_cluster_membership_healthy{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}) == 0) or vector(0)
+    connectFail:
+      kind: Panel
+      spec:
+        display:
+          name: Backend connect failures
+          description: Times Envoy could not open a connection to a backend pod in the selected range, usually a pod restarting.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 50
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(envoy_cluster_upstream_cx_connect_fail{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]))
+    denied:
+      kind: Panel
+      spec:
+        display:
+          name: CrowdSec denied
+          description: 'Requests the CrowdSec bouncer refused in the selected range: banned IPs and AppSec rule hits. External gateway only.'
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(envoy_http_ext_authz_denied{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__range]))
+    failOpen:
+      kind: Panel
+      spec:
+        display:
+          name: Uninspected (fail-open)
+          description: Requests let through without a CrowdSec decision because the bouncer did not answer. The SecurityPolicy fails open by design, so this is the only place that shows it.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(envoy_http_ext_authz_failure_mode_allowed{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__range]))
+    certExpiry:
+      kind: Panel
+      spec:
+        display:
+          name: Certificate expires in
+          description: The wildcard certificate both gateways serve. It is a 160h Let's Encrypt shortlived certificate renewed at two thirds of its life, so this normally cycles between ~53h and 160h; under 36h means a renewal was missed.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: hours
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 12
+                  color: '#ffb300'
+                - value: 36
+                  color: '#43a047'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (min(certmanager_certificate_expiration_timestamp_seconds{exported_namespace="network"}) - time()) / 3600
+    rpsByGateway:
+      kind: Panel
+      spec:
+        display:
+          name: Requests / s by gateway
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (gateway) (label_replace(rate(envoy_http_downstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"}[$__rate_interval]), "gateway", "$1", "pod", "(envoy-[a-z]+)-.*"))
+                  seriesNameFormat: '{{gateway}}'
+    statusClasses:
+      kind: Panel
+      spec:
+        display:
+          name: Responses by status class
+          description: 3xx is mostly the plain-HTTP listener redirecting to HTTPS.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (envoy_response_code_class) (rate(envoy_http_downstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"}[$__rate_interval]))
+                  seriesNameFormat: '{{envoy_response_code_class}}xx'
+    rpsByRoute:
+      kind: Panel
+      spec:
+        display:
+          name: Requests / s by route
+          description: The ten busiest routes at each point in time.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (route) (label_replace(rate(envoy_cluster_upstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")))
+                  seriesNameFormat: '{{route}}'
+    httpVersions:
+      kind: Panel
+      spec:
+        display:
+          name: HTTP versions
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_downstream_rq_http1_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__rate_interval]))
+                  seriesNameFormat: HTTP/1.1
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_downstream_rq_http2_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__rate_interval]))
+                  seriesNameFormat: HTTP/2
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_downstream_rq_http3_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__rate_interval]))
+                  seriesNameFormat: HTTP/3
+    bytesByRoute:
+      kind: Panel
+      spec:
+        display:
+          name: Response bytes by route
+          description: Bytes the backends sent back, ten heaviest routes.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (route) (label_replace(rate(envoy_cluster_upstream_cx_rx_bytes_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")))
+                  seriesNameFormat: '{{route}}'
+    ciphers:
+      kind: Panel
+      spec:
+        display:
+          name: TLS ciphers
+          description: Negotiated cipher per TLS handshake over the selected range. The TLS_ ones are TLS 1.3.
+        plugin:
+          kind: PieChart
+          spec:
+            calculation: last-number
+            mode: percentage
+            format:
+              unit: percent
+              decimalPlaces: 1
+            radius: 70
+            showLabels: false
+            sort: desc
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - relative
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (envoy_ssl_cipher) (increase(envoy_listener_ssl_ciphers{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__range]))
+                  seriesNameFormat: '{{envoy_ssl_cipher}}'
+    routeTable:
+      kind: Panel
+      spec:
+        display:
+          name: Routes
+          description: Every route over the selected range. p95 is the backend's own response time as Envoy measured it. Healthy endpoints at 0 means requests to it get a 503.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: route
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - route
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: route
+                header: Route
+                enableSorting: true
+              - name: 'value #1'
+                header: Requests
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: decimal
+                  shortValues: true
+              - name: 'value #2'
+                header: 5xx
+                enableSorting: true
+                format:
+                  unit: decimal
+                  shortValues: true
+              - name: 'value #3'
+                header: 5xx %
+                enableSorting: true
+                format:
+                  unit: percent-decimal
+                  decimalPlaces: 2
+              - name: 'value #4'
+                header: p95
+                enableSorting: true
+                format:
+                  unit: seconds
+                  decimalPlaces: 0
+              - name: 'value #5'
+                header: Healthy endpoints
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*", envoy_response_code_class="5"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*"))) or 0 * sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*"))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*", envoy_response_code_class="5"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")) or 0 * sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*"))) / (sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_total{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")) > 0)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le, route) (label_replace(rate(envoy_cluster_upstream_rq_time_bucket{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*"))) / 1000
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (route) (label_replace(envoy_cluster_membership_healthy{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}, "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*"))
+    e5ByRoute:
+      kind: Panel
+      spec:
+        display:
+          name: 5xx by route
+          description: 5xx responses from backends per interval. Gaps are intervals with none.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (route) (label_replace(increase(envoy_cluster_upstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*", envoy_response_code_class="5"}[$__rate_interval]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")) > 0
+                  seriesNameFormat: '{{route}}'
+    e4ByRoute:
+      kind: Panel
+      spec:
+        display:
+          name: 4xx by route
+          description: 4xx from backends. Bouncer denials never reach a backend, so they are not in here.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (route) (label_replace(rate(envoy_cluster_upstream_rq_xx{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*", envoy_response_code_class="4"}[$__rate_interval]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")) > 0)
+                  seriesNameFormat: '{{route}}'
+    latency:
+      kind: Panel
+      spec:
+        display:
+          name: Request latency
+          description: Whole request as the client experienced it, on the HTTPS listener.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.5, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__rate_interval]))) / 1000
+                  seriesNameFormat: p50
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__rate_interval]))) / 1000
+                  seriesNameFormat: p95
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.99, sum by (le) (rate(envoy_http_downstream_rq_time_bucket{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix="https-10443"}[$__rate_interval]))) / 1000
+                  seriesNameFormat: p99
+    routeP95:
+      kind: Panel
+      spec:
+        display:
+          name: Backend p95 by route
+          description: The ten slowest backends at each point in time. Long-polling and streaming endpoints (Perses, ntfy) sit high by nature.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, histogram_quantile(0.95, sum by (le, route) (label_replace(rate(envoy_cluster_upstream_rq_time_bucket{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*"))) / 1000)
+                  seriesNameFormat: '{{route}}'
+    connFail:
+      kind: Panel
+      spec:
+        display:
+          name: Backend connect failures
+          description: Per interval. A burst on one route lines up with that app's pod restarting.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (route) (label_replace(increase(envoy_cluster_upstream_cx_connect_fail{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")) > 0
+                  seriesNameFormat: '{{route}}'
+    resets:
+      kind: Panel
+      spec:
+        display:
+          name: Timeouts and resets
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_cluster_upstream_rq_timeout{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]))
+                  seriesNameFormat: timeouts
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_cluster_upstream_rq_rx_reset{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]))
+                  seriesNameFormat: reset by backend
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_cluster_upstream_rq_tx_reset{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__rate_interval]))
+                  seriesNameFormat: reset by Envoy
+    tlsErrors:
+      kind: Panel
+      spec:
+        display:
+          name: TLS and connection limits
+          description: TLS errors are mostly scanners speaking something other than TLS to :443.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: /s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_listener_ssl_connection_error{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__rate_interval]))
+                  seriesNameFormat: TLS errors
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_listener_downstream_cx_overflow{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__rate_interval]))
+                  seriesNameFormat: connections refused (overflow)
+    authz:
+      kind: Panel
+      spec:
+        display:
+          name: Bouncer decisions
+          description: 'Every request on envoy-external is checked by the bouncer first. ''allowed uninspected'' is the fail-open path: the bouncer did not answer in time and the request went through anyway.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#ffb300'
+              - queryIndex: 3
+                colorMode: fixed-single
+                colorValue: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_ext_authz_ok{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__rate_interval]))
+                  seriesNameFormat: allowed
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_ext_authz_denied{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__rate_interval]))
+                  seriesNameFormat: denied
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_ext_authz_error{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__rate_interval]))
+                  seriesNameFormat: error
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(envoy_http_ext_authz_failure_mode_allowed{job="network/envoy-proxy", pod=~"$gateway-.*"}[$__rate_interval]))
+                  seriesNameFormat: allowed uninspected
+    deniedByRoute:
+      kind: Panel
+      spec:
+        display:
+          name: Denied by route
+          description: Where refused requests were heading, over the selected range.
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: decimal
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (route) (label_replace(increase(envoy_cluster_ext_authz_denied{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_cluster_name=~"httproute/($route)/rule/.*"}[$__range]), "route", "$1", "envoy_cluster_name", "httproute/([^/]+/[^/]+)/rule/.*")) > 0
+                  seriesNameFormat: '{{route}}'
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 3
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="network", container="envoy", pod=~"$gateway-.*"}[$__rate_interval])), "replica", "$1-$2", "pod", "envoy-([a-z]+)-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    memory:
+      kind: Panel
+      spec:
+        display:
+          name: Memory
+          description: Container working set against its limit.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#e53935'
+                lineStyle: dashed
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (container_memory_working_set_bytes{namespace="network", container="envoy", pod=~"$gateway-.*"}), "replica", "$1-$2", "pod", "envoy-([a-z]+)-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(kube_pod_container_resource_limits{namespace="network", container="envoy", resource="memory", pod=~"$gateway-.*"})
+                  seriesNameFormat: limit
+    conns:
+      kind: Panel
+      spec:
+        display:
+          name: Open connections per proxy
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (envoy_http_downstream_cx_active{job="network/envoy-proxy", pod=~"$gateway-.*", envoy_http_conn_manager_prefix=~"http-10080|https-10443"}), "replica", "$1-$2", "pod", "envoy-([a-z]+)-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    heap:
+      kind: Panel
+      spec:
+        display:
+          name: Envoy heap allocated
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(max by (pod) (envoy_server_memory_allocated{job="network/envoy-proxy", pod=~"$gateway-.*"}), "replica", "$1-$2", "pod", "envoy-([a-z]+)-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    restarts:
+      kind: Panel
+      spec:
+        display:
+          name: Restarts
+          description: Envoy and its shutdown-manager sidecar together.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace="network", pod=~"$gateway-.*"}[$__rate_interval])), "replica", "$1-$2", "pod", "envoy-([a-z]+)-[0-9a-f]+-(.+)") > 0
+                  seriesNameFormat: '{{replica}}'
+    uptime:
+      kind: Panel
+      spec:
+        display:
+          name: Uptime
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: hours
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(max by (pod) (envoy_server_uptime{job="network/envoy-proxy", pod=~"$gateway-.*"}), "replica", "$1-$2", "pod", "envoy-([a-z]+)-[0-9a-f]+-(.+)") / 3600
+                  seriesNameFormat: '{{replica}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/rps'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/success'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/clientErrors'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/p95'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/activeConns'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/http3'
+          - x: 0
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/proxiesUp'
+          - x: 4
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/unhealthy'
+          - x: 8
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/connectFail'
+          - x: 12
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/denied'
+          - x: 16
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/failOpen'
+          - x: 20
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/certExpiry'
+    - kind: Grid
+      spec:
+        display:
+          title: Traffic
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/rpsByGateway'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/statusClasses'
+          - x: 0
+            "y": 8
+            width: 24
+            height: 8
+            content:
+              $ref: '#/spec/panels/rpsByRoute'
+          - x: 0
+            "y": 16
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/httpVersions'
+          - x: 8
+            "y": 16
+            width: 10
+            height: 8
+            content:
+              $ref: '#/spec/panels/bytesByRoute'
+          - x: 18
+            "y": 16
+            width: 6
+            height: 8
+            content:
+              $ref: '#/spec/panels/ciphers'
+    - kind: Grid
+      spec:
+        display:
+          title: Routes
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 12
+            content:
+              $ref: '#/spec/panels/routeTable'
+          - x: 0
+            "y": 12
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/e5ByRoute'
+          - x: 12
+            "y": 12
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/e4ByRoute'
+    - kind: Grid
+      spec:
+        display:
+          title: Latency
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/latency'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/routeP95'
+    - kind: Grid
+      spec:
+        display:
+          title: Errors and resilience
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/connFail'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/resets'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/tlsErrors'
+    - kind: Grid
+      spec:
+        display:
+          title: CrowdSec at the edge
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 16
+            height: 8
+            content:
+              $ref: '#/spec/panels/authz'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/deniedByRoute'
+    - kind: Grid
+      spec:
+        display:
+          title: Resources
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/memory'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/conns'
+          - x: 0
+            "y": 7
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/heap'
+          - x: 8
+            "y": 7
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/restarts'
+          - x: 16
+            "y": 7
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/uptime'
+  links:
+    - name: Envoy Gateway docs
+      url: https://gateway.envoyproxy.io/docs/
+      targetBlank: true

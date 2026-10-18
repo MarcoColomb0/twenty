@@ -22,6 +22,14 @@ spec:
           matchLabels:
             app.kubernetes.io/name: k8s-gateway
     fullnameOverride: k8s-gateway
+    # The prometheus plugin in servers[] below already serves :9153; these
+    # put a Service and a ServiceMonitor in front of it. kube-prometheus-stack
+    # adopts ServiceMonitors from every namespace, so no selector labels.
+    prometheus:
+      service:
+        enabled: true
+      monitor:
+        enabled: true
     # Chart 4.0 replaced domain/ttl/fallthrough/watchedResources/
     # extraZonePlugins with CoreDNS-style servers[]. Helm ignores unknown
     # values, so the 4.0.1 bump rendered the chart's own default --
