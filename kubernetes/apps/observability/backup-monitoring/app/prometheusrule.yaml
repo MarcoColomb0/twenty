@@ -39,7 +39,16 @@ spec:
         - alert: PostgresWALArchiveStalled
           # WAL archiving is what makes recovery land between base backups.
           # If it stops, the recoverable window silently stops advancing.
-          expr: time() - cnpg_pg_stat_archiver_last_archived_time > 21600
+          #
+          # Only a primary that wrote WAL and did not archive it counts. An idle
+          # database writes no WAL and so archives nothing, which the bare age
+          # check read as a stall: oxicloud fired this for two weeks in October
+          # 2026 with zero WAL written and zero segments waiting. Replicas never
+          # archive, so they are excluded too.
+          expr: |
+            (time() - cnpg_pg_stat_archiver_last_archived_time > 21600)
+              and on (namespace, pod) (increase(cnpg_collector_wal_bytes[6h]) > 0)
+              and on (namespace, pod) (cnpg_pg_replication_in_recovery == 0)
           for: 15m
           labels:
             severity: warning
