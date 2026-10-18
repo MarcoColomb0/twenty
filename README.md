@@ -63,7 +63,7 @@ _[Flux CD](https://fluxcd.io/) (Talos Linux) + [doco-cd](https://doco.cd/latest/
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/talos.svg"> | [tuppr](https://github.com/home-operations/tuppr) | Talos and Kubernetes upgrades, driven by the API rather than `talosctl` from a laptop. A merged Renovate PR is what starts a rollout — drained, rebooted and health-gated one node at a time. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/docker.svg"> | [doco-cd](https://doco.cd) | The same GitOps loop for hosts outside the cluster. Polls this repository and deploys the Compose stacks under `docker/` to an Oracle ARM box. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/prometheus.svg"> | [Prometheus](https://prometheus.io) | Metrics, 5-day retention on Longhorn. |
-| <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/grafana.svg"> | [Grafana](https://grafana.com) | Dashboards. No login form at all — Pocket ID only. |
+| <img width="28" src="https://avatars.githubusercontent.com/u/77209215"> | [Perses](https://perses.dev) | Dashboards, built by hand in the UI. Pocket ID only, LAN and tailnet only. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/alertmanager.svg"> | [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) | Routes alerts to ntfy. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/ntfy.svg"> | [ntfy](https://ntfy.sh) | Push notifications, published so alerts arrive when away from home. |
 | <img width="28" src="https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/gatus.svg"> | [Gatus](https://gatus.io) | Uptime checks, and the closest thing here to a service index. |
@@ -96,11 +96,11 @@ _[Flux CD](https://fluxcd.io/) (Talos Linux) + [doco-cd](https://doco.cd/latest/
 
 Adding SSO to an app is a `PocketIDOIDCClient` next to it. The operator creates the client, writes the
 credentials to a `Secret`, and the app reads them — nothing is clicked, and deleting the resource
-rebuilds it identically. Grafana, Immich, Karakeep and Gatus all sign in this way.
+rebuilds it identically. Perses, Immich, Karakeep and Gatus all sign in this way.
 
-Grafana has no login form at all: Pocket ID is the only way in through a browser, so there is no
-Grafana-local password to phish or reuse. The admin account still answers on the HTTP API over basic
-auth, which is the way back in if Pocket ID is unreachable.
+Perses has no local accounts at all: the native provider and sign-up are both off, so Pocket ID is
+the only way in. If Pocket ID is unreachable, so are the dashboards; Prometheus itself still answers
+on the internal gateway.
 
 ### security
 
@@ -132,16 +132,15 @@ bouncer that is down costs remediation and not the gateway.
 
 Every component that exports metrics is scraped: Cilium, Envoy, Longhorn, CloudNativePG, Flux,
 cert-manager, Blocky, Pocket ID, and CrowdSec — the agent on every node, plus AppSec, the LAPI and
-the bouncer. Grafana carries the kubernetes-mixin dashboards plus one per app,
-pinned by revision or release tag so upstream cannot quietly change what a panel shows.
+the bouncer. Perses reads that Prometheus through a server-side proxy; its datasource is
+provisioned from git, while the dashboards are built in the UI and live on a volume VolSync backs up.
 
 Prometheus and Alertmanager are reachable on the internal gateway only. Neither has any
 authentication, so publishing them would hand over every metric and the ability to silence alerts.
 
-Grafana is published, because it is the one of the three that can defend itself: it has no login form
-at all, so Pocket ID is the only way in, and the external gateway puts it behind the CrowdSec bouncer
-and AppSec like everything else out there. Kromgo is public too, because GitHub has to be able to
-fetch the badges on this page.
+Perses stays internal as well, despite requiring Pocket ID: saving a dashboard is a `PUT`, which
+AppSec blocks outright on the external gateway, and the tailnet already reaches it from anywhere.
+Kromgo is public, because GitHub has to be able to fetch the badges on this page.
 
 ### backups
 

@@ -26,7 +26,7 @@ spec:
               RUN_MIGRATIONS: "1"
               # No local account is ever created. Pocket ID is the only way in,
               # which means there is no password on this to phish or reuse --
-              # the same posture as Grafana and Actual.
+              # the same posture as Perses and Actual.
               CREATE_ADMIN: "0"
               DISABLE_LOCAL_AUTH: "1"
               OAUTH2_PROVIDER: oidc

@@ -5,7 +5,7 @@ metadata:
   name: backup-monitoring
 spec:
   dependsOn:
-    # needs the PrometheusRule CRD and the Grafana dashboard sidecar
+    # needs the PrometheusRule CRD
     - name: kube-prometheus-stack
       namespace: observability
   interval: 1h

@@ -1,0 +1,31 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: perses
+spec:
+  dependsOn:
+    # Supplies the pocketid.internal CRDs the OIDC client and user group are
+    # declared with.
+    - name: pocket-id-operator
+      namespace: security
+  interval: 1h
+  path: ./kubernetes/apps/observability/perses/app
+  postBuild:
+    substitute:
+      APP: perses
+      VOLSYNC_SCHEDULE: "15 6 * * *"
+      VOLSYNC_CACHE_CAPACITY: 1Gi
+      # distroless :nonroot, which is what owns the dashboards on the volume.
+      VOLSYNC_UID: "65532"
+      VOLSYNC_GID: "65532"
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: observability
+  wait: false
