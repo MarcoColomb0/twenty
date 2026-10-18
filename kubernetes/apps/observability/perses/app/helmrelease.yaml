@@ -16,6 +16,11 @@ spec:
     fullnameOverride: perses
 
     config:
+      # How soon a dashboard merged to git shows up, after the kubelet has
+      # synced the ConfigMap (up to a minute). Each pass rewrites every
+      # provisioned resource, which is a handful of small files.
+      provisioning:
+        interval: 2m
       security:
         enable_auth: true
         # encryption_key is set by the postRenderer at the bottom: the chart

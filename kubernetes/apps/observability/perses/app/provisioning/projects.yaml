@@ -1,0 +1,10 @@
+---
+# One project per namespace, the same mapping perses-operator uses. A
+# dashboard names its project in metadata.project; Perses refuses to provision
+# a dashboard whose project does not exist.
+- kind: Project
+  metadata:
+    name: network
+  spec:
+    display:
+      name: network

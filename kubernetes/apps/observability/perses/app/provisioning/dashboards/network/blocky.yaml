@@ -1,0 +1,1436 @@
+---
+# Blocky, the LAN resolver: three replicas in network, each scraped on :4000
+# by the blocky-metrics ServiceMonitor (job="blocky").
+#
+# Conventions used throughout:
+#   - $pod and $client are multi-select, and "All" is sent as one regex rather
+#     than an alternation of every value. For $pod that regex is the
+#     Deployment's pod-name shape, because the cAdvisor and kube-state-metrics
+#     panels select by namespace and would otherwise pull in cloudflared and
+#     the rest of network -- and blocky-dragonfly-0 does not match it.
+#   - Rates use $__rate_interval, which Perses sizes from the scrape interval
+#     and the zoom level. Totals for "the selected range" use $__range.
+#   - Per-replica series are labelled by the pod-name suffix (label_replace
+#     into "replica"); the full names do not fit a legend.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: blocky
+  project: network
+spec:
+  display:
+    name: Blocky
+    description: LAN DNS resolver -- traffic, blocking, upstreams, cache, clients and the pods behind them.
+  duration: 6h
+  refreshInterval: 1m
+  links:
+    - name: Blocky docs
+      url: https://0xerr0r.github.io/blocky/latest/
+      targetBlank: true
+
+  variables:
+    - kind: ListVariable
+      spec:
+        name: pod
+        display:
+          name: Replica
+          hidden: false
+        allowMultiple: true
+        allowAllValue: true
+        customAllValue: "blocky-[0-9a-f]+-[0-9a-z]+"
+        defaultValue: $__all
+        sort: alphabetical-asc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: pod
+            matchers:
+              - blocky_build_info
+    - kind: ListVariable
+      spec:
+        name: client
+        display:
+          name: Client
+          description: Only filters the Clients section and the blocked-clients chart.
+          hidden: false
+        allowMultiple: true
+        allowAllValue: true
+        customAllValue: ".*"
+        defaultValue: $__all
+        sort: alphabetical-asc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: client
+            matchers:
+              - blocky_query_total
+
+  panels:
+    # ---------------------------------------------------------------- overview
+    qps:
+      kind: Panel
+      spec:
+        display:
+          name: Queries / s
+          description: All queries answered, every replica combined.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 2
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(blocky_query_total{pod=~"$pod"}[$__rate_interval]))
+    queriesRange:
+      kind: Panel
+      spec:
+        display:
+          name: Queries in range
+          description: Total queries over the selected time range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum(increase(blocky_query_total{pod=~"$pod"}[$__range])))
+    blockedRatio:
+      kind: Panel
+      spec:
+        display:
+          name: Blocked
+          description: Share of responses blocked by the denylists over the selected range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum(increase(blocky_response_total{pod=~"$pod", response_type="BLOCKED"}[$__range]))
+                      /
+                    sum(increase(blocky_response_total{pod=~"$pod"}[$__range]))
+    cacheHitRatio:
+      kind: Panel
+      spec:
+        display:
+          name: Cache hit ratio
+          description: Lookups answered from cache over the selected range. The cache is shared through Dragonfly, so a hit can be an answer another replica fetched.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: "#e53935"
+              steps:
+                - value: 0.5
+                  color: "#ffb300"
+                - value: 0.75
+                  color: "#43a047"
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum(increase(blocky_cache_hits_total{pod=~"$pod"}[$__range]))
+                      /
+                    (
+                      sum(increase(blocky_cache_hits_total{pod=~"$pod"}[$__range]))
+                      + sum(increase(blocky_cache_misses_total{pod=~"$pod"}[$__range]))
+                    )
+    upstreamP95:
+      kind: Panel
+      spec:
+        display:
+          name: Upstream p95
+          description: 95th percentile time to answer a query that had to go upstream (DNS-over-TLS to Cloudflare or Quad9), over the last hour.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: "#43a047"
+              steps:
+                - value: 0.3
+                  color: "#ffb300"
+                - value: 1
+                  color: "#e53935"
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(blocky_request_duration_seconds_bucket{pod=~"$pod", response_type="RESOLVED"}[1h])))
+    activeClients:
+      kind: Panel
+      spec:
+        display:
+          name: Clients
+          description: Distinct client addresses that sent at least one query in the selected range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(sum by (client) (increase(blocky_query_total{pod=~"$pod"}[$__range])) > 0)
+    blockingEnabled:
+      kind: Panel
+      spec:
+        display:
+          name: Blocking
+          description: Whether every selected replica is currently blocking. Disabled on any one of them shows as disabled.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            colorMode: background_solid
+            mappings:
+              - kind: Value
+                spec:
+                  value: "1"
+                  result:
+                    value: Enabled
+                    color: "#43a047"
+              - kind: Value
+                spec:
+                  value: "0"
+                  result:
+                    value: Disabled
+                    color: "#e53935"
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: min(blocky_blocking_enabled{pod=~"$pod"})
+    replicasUp:
+      kind: Panel
+      spec:
+        display:
+          name: Replicas up
+          description: Replicas Prometheus can scrape, against the Deployment's desired count.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            colorMode: background_solid
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: "#e53935"
+              steps:
+                - value: 0.5
+                  color: "#ffb300"
+                - value: 1
+                  color: "#43a047"
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum(up{job="blocky"})
+                      /
+                    max(kube_deployment_spec_replicas{namespace="network", deployment="blocky"})
+    denylistEntries:
+      kind: Panel
+      spec:
+        display:
+          name: Denylist domains
+          description: Domains loaded into the denylist cache (hagezi pro, tif and fake).
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              shortValues: true
+              decimalPlaces: 2
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(blocky_denylist_cache_entries{pod=~"$pod"})
+    listAge:
+      kind: Panel
+      spec:
+        display:
+          name: Lists age
+          description: Time since the oldest selected replica last refreshed its lists. refreshPeriod is 24h, so anything past ~26h means refreshes are failing.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: hours
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: "#43a047"
+              steps:
+                - value: 26
+                  color: "#ffb300"
+                - value: 48
+                  color: "#e53935"
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(time() - blocky_last_list_group_refresh_timestamp_seconds{pod=~"$pod"}) / 3600
+    errorRatio:
+      kind: Panel
+      spec:
+        display:
+          name: Error rate
+          description: blocky_error_total against queries over the selected range -- failed upstream exchanges and malformed requests.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: "#43a047"
+              steps:
+                - value: 0.01
+                  color: "#ffb300"
+                - value: 0.05
+                  color: "#e53935"
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum(increase(blocky_error_total{pod=~"$pod"}[$__range]))
+                      /
+                    sum(increase(blocky_query_total{pod=~"$pod"}[$__range]))
+    version:
+      kind: Panel
+      spec:
+        display:
+          name: Version
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: version
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (version) (blocky_build_info{pod=~"$pod"})
+
+    # ----------------------------------------------------------------- traffic
+    responsesByType:
+      kind: Panel
+      spec:
+        display:
+          name: Responses by type
+          description: How each query was answered. RESOLVED went upstream, CACHED came from cache, CONDITIONAL went to k8s-gateway for the cluster domain, SPECIAL is a special-use name answered locally.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (response_type) (rate(blocky_response_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: "{{response_type}}"
+    queriesByRecordType:
+      kind: Panel
+      spec:
+        display:
+          name: Queries by record type
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (type) (rate(blocky_query_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: "{{type}}"
+    responseTypeShare:
+      kind: Panel
+      spec:
+        display:
+          name: Answer mix
+          description: Share of each response type over the selected range.
+        plugin:
+          kind: PieChart
+          spec:
+            calculation: last-number
+            mode: percentage
+            format:
+              unit: percent
+              decimalPlaces: 1
+            radius: 70
+            showLabels: false
+            sort: desc
+            legend:
+              position: bottom
+              mode: table
+              values:
+                - relative
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (response_type) (increase(blocky_response_total{pod=~"$pod"}[$__range]))
+                  seriesNameFormat: "{{response_type}}"
+    responseCodeShare:
+      kind: Panel
+      spec:
+        display:
+          name: Response codes
+          description: Share of DNS response codes over the selected range. NXDOMAIN is normal background noise; SERVFAIL is not.
+        plugin:
+          kind: PieChart
+          spec:
+            calculation: last-number
+            mode: percentage
+            format:
+              unit: percent
+              decimalPlaces: 1
+            radius: 70
+            showLabels: true
+            sort: desc
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - relative
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (response_code) (increase(blocky_response_total{pod=~"$pod"}[$__range]))
+                  seriesNameFormat: "{{response_code}}"
+    responseCodes:
+      kind: Panel
+      spec:
+        display:
+          name: Response codes over time
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (response_code) (rate(blocky_response_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: "{{response_code}}"
+    queriesPerReplica:
+      kind: Panel
+      spec:
+        display:
+          name: Queries per replica
+          description: How the k8s-gateway / LoadBalancer spreads load across the three replicas. One flat at zero is a replica out of rotation.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(blocky_query_total{pod=~"$pod"}[$__rate_interval])), "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+    errorsPerReplica:
+      kind: Panel
+      spec:
+        display:
+          name: Errors per replica
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: events/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(blocky_error_total{pod=~"$pod"}[$__rate_interval])), "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+
+    # ---------------------------------------------------------------- blocking
+    blockedRate:
+      kind: Panel
+      spec:
+        display:
+          name: Blocked / s
+          description: BLOCKED CNAME is a name that was allowed itself but whose CNAME chain led into a denylisted domain.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+            visual:
+              stack: all
+              areaOpacity: 0.5
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (reason) (rate(blocky_response_total{pod=~"$pod", response_type="BLOCKED"}[$__rate_interval]))
+                  seriesNameFormat: "{{reason}}"
+    blockedRatioOverTime:
+      kind: Panel
+      spec:
+        display:
+          name: Blocked share
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - mean
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+            visual:
+              areaOpacity: 0.2
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum(rate(blocky_response_total{pod=~"$pod", response_type="BLOCKED"}[$__rate_interval]))
+                      /
+                    sum(rate(blocky_response_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: blocked
+    topBlockedClients:
+      kind: Panel
+      spec:
+        display:
+          name: Most blocked clients
+          description: The ten clients with the most blocked queries over the selected range. A device that suddenly tops this list is usually phoning home.
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: decimal
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, round(sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client", response_type="BLOCKED"}[$__range]))))
+                  seriesNameFormat: "{{client}}"
+    listEntries:
+      kind: Panel
+      spec:
+        display:
+          name: List entries
+          description: Entries per list group. A drop after a refresh means an upstream list shrank or failed to download.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (group) (blocky_denylist_cache_entries{pod=~"$pod"})
+                  seriesNameFormat: "denylist {{group}}"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (group) (blocky_allowlist_cache_entries{pod=~"$pod"})
+                  seriesNameFormat: "allowlist {{group}}"
+    listRefreshes:
+      kind: Panel
+      spec:
+        display:
+          name: List refreshes and failed downloads
+          description: Per hour. Each replica downloads the lists itself, roughly 58 MB a time, so three refreshes land per cycle.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: "#e53935"
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(changes(blocky_last_list_group_refresh_timestamp_seconds{pod=~"$pod"}[1h]))
+                  seriesNameFormat: refreshes
+                  minStep: 1h
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(blocky_failed_downloads_total{pod=~"$pod"}[1h]))
+                  seriesNameFormat: failed downloads
+                  minStep: 1h
+
+    # ------------------------------------------------------- upstreams/latency
+    resolvedByUpstream:
+      kind: Panel
+      spec:
+        display:
+          name: Resolved by upstream
+          description: Queries answered by each DNS-over-TLS upstream. parallel_best races two upstreams and keeps the faster answer, so this is also a running speed contest.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - mean
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+            visual:
+              stack: all
+              areaOpacity: 0.5
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    label_replace(
+                      sum by (reason) (rate(blocky_response_total{pod=~"$pod", response_type="RESOLVED"}[$__rate_interval])),
+                      "upstream", "$1", "reason", "RESOLVED \\(tcp-tls:(.+)\\)"
+                    )
+                  seriesNameFormat: "{{upstream}}"
+    upstreamShare:
+      kind: Panel
+      spec:
+        display:
+          name: Upstream wins
+          description: Share of upstream answers each resolver won over the selected range.
+        plugin:
+          kind: PieChart
+          spec:
+            calculation: last-number
+            mode: percentage
+            format:
+              unit: percent
+              decimalPlaces: 1
+            radius: 70
+            showLabels: true
+            sort: desc
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - relative
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    label_replace(
+                      sum by (reason) (increase(blocky_response_total{pod=~"$pod", response_type="RESOLVED"}[$__range])),
+                      "upstream", "$1", "reason", "RESOLVED \\(tcp-tls:(.+)\\)"
+                    )
+                  seriesNameFormat: "{{upstream}}"
+    upstreamLatency:
+      kind: Panel
+      spec:
+        display:
+          name: Upstream latency
+          description: Percentiles for queries that went upstream. Over 2s is the configured timeout.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - mean
+                - max
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.5, sum by (le) (rate(blocky_request_duration_seconds_bucket{pod=~"$pod", response_type="RESOLVED"}[$__rate_interval])))
+                  seriesNameFormat: p50
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(blocky_request_duration_seconds_bucket{pod=~"$pod", response_type="RESOLVED"}[$__rate_interval])))
+                  seriesNameFormat: p95
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.99, sum by (le) (rate(blocky_request_duration_seconds_bucket{pod=~"$pod", response_type="RESOLVED"}[$__rate_interval])))
+                  seriesNameFormat: p99
+    latencyByType:
+      kind: Panel
+      spec:
+        display:
+          name: p95 latency by response type
+          description: CACHED and BLOCKED should sit in the low milliseconds; err is how long a failing query took to give up.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le, response_type) (rate(blocky_request_duration_seconds_bucket{pod=~"$pod"}[$__rate_interval])))
+                  seriesNameFormat: "{{response_type}}"
+    fastAnswers:
+      kind: Panel
+      spec:
+        display:
+          name: Answered within
+          description: Share of all queries answered inside each latency bound -- the histogram's own buckets, so no interpolation.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - min
+            yAxis:
+              format:
+                unit: percent-decimal
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum by (le) (rate(blocky_request_duration_seconds_bucket{pod=~"$pod", le=~"0.01|0.05|0.1|0.5"}[$__rate_interval]))
+                      / ignoring (le) group_left
+                    sum(rate(blocky_request_duration_seconds_count{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: "≤ {{le}}s"
+
+    # ---------------------------------------------------------- cache/prefetch
+    cacheHitRatioOverTime:
+      kind: Panel
+      spec:
+        display:
+          name: Cache hit ratio
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+              values:
+                - mean
+            yAxis:
+              format:
+                unit: percent-decimal
+              max: 1
+            visual:
+              areaOpacity: 0.2
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    sum(rate(blocky_cache_hits_total{pod=~"$pod"}[$__rate_interval]))
+                      /
+                    (
+                      sum(rate(blocky_cache_hits_total{pod=~"$pod"}[$__rate_interval]))
+                      + sum(rate(blocky_cache_misses_total{pod=~"$pod"}[$__rate_interval]))
+                    )
+                  seriesNameFormat: hit ratio
+    cacheOps:
+      kind: Panel
+      spec:
+        display:
+          name: Cache hits and misses
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(blocky_cache_hits_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: hits
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(blocky_cache_misses_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: misses
+    cacheEntries:
+      kind: Panel
+      spec:
+        display:
+          name: Cache entries
+          description: Answers held in each replica's in-memory cache (maxItemsCount 25000), and names tracked for prefetching (2000).
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(blocky_cache_entries{pod=~"$pod"}, "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(blocky_prefetch_domain_name_cache_entries{pod=~"$pod"})
+                  seriesNameFormat: prefetch names
+    prefetch:
+      kind: Panel
+      spec:
+        display:
+          name: Prefetching
+          description: Prefetches refresh popular names before they expire; a prefetch hit is a query that would otherwise have gone upstream.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(blocky_prefetches_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: prefetches
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(blocky_prefetch_hits_total{pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: prefetch hits
+    redisDrops:
+      kind: Panel
+      spec:
+        display:
+          name: Shared cache sync drops
+          description: Cache updates dropped on the way to Dragonfly because the send buffer was full. Non-zero means replicas stop sharing some answers.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (increase(blocky_redis_cache_buffer_drops_total{pod=~"$pod"}[$__rate_interval])), "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+
+    # ----------------------------------------------------------------- clients
+    topClients:
+      kind: Panel
+      spec:
+        display:
+          name: Top clients
+          description: The fifteen busiest client addresses over the selected range. 10.42.x.x are pods, 192.168.x.x the LAN.
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: decimal
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(15, round(sum by (client) (increase(blocky_query_total{pod=~"$pod", client=~"$client"}[$__range]))))
+                  seriesNameFormat: "{{client}}"
+    clientTable:
+      kind: Panel
+      spec:
+        display:
+          name: Clients
+          description: Every client that queried in the selected range, busiest first, with how much of its traffic was blocked.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            # With several queries every label is suffixed by its query index
+            # ("client #1", "client #2", ...): fold those into one column, then
+            # join the three rows each client produces into one.
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: client
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - client
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: client
+                header: Client
+                enableSorting: true
+              - name: "value #1"
+                header: Queries
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: decimal
+                  shortValues: true
+              - name: "value #2"
+                header: Blocked
+                enableSorting: true
+                format:
+                  unit: decimal
+                  shortValues: true
+              - name: "value #3"
+                header: Blocked %
+                enableSorting: true
+                format:
+                  unit: percent-decimal
+                  decimalPlaces: 1
+        # The "or 0 * total" arms give a client with nothing blocked a 0 rather
+        # than an empty cell; "> 0" drops clients that were silent all range.
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client"}[$__range]))) > 0
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    (
+                      round(sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client", response_type="BLOCKED"}[$__range])))
+                        or
+                      0 * sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client"}[$__range]))
+                    )
+                      and
+                    (sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client"}[$__range])) > 0)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: |-
+                    (
+                      sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client", response_type="BLOCKED"}[$__range]))
+                        or
+                      0 * sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client"}[$__range]))
+                    )
+                      /
+                    (sum by (client) (increase(blocky_client_response_total{pod=~"$pod", client=~"$client"}[$__range])) > 0)
+    clientRates:
+      kind: Panel
+      spec:
+        display:
+          name: Queries / s by client
+          description: The ten busiest clients at each point in time.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - mean
+                - max
+            yAxis:
+              label: queries/s
+              format:
+                unit: decimal
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (client) (rate(blocky_query_total{pod=~"$pod", client=~"$client"}[$__rate_interval])))
+                  seriesNameFormat: "{{client}}"
+
+    # --------------------------------------------------------------- resources
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              label: cores
+              format:
+                unit: decimal
+                decimalPlaces: 3
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="network", container="app", pod=~"$pod"}[$__rate_interval])), "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+    memory:
+      kind: Panel
+      spec:
+        display:
+          name: Memory
+          description: Working set per replica against the container limit and the GOMEMLIMIT soft limit below it. The denylists are most of this and do not shrink.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: "#e53935"
+                lineStyle: dashed
+              - queryIndex: 2
+                colorMode: fixed-single
+                colorValue: "#ffb300"
+                lineStyle: dashed
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (container_memory_working_set_bytes{namespace="network", container="app", pod=~"$pod"}), "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(kube_pod_container_resource_limits{namespace="network", container="app", resource="memory", pod=~"$pod"})
+                  seriesNameFormat: limit
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(go_gc_gomemlimit_bytes{job="blocky", pod=~"$pod"})
+                  seriesNameFormat: GOMEMLIMIT
+    heap:
+      kind: Panel
+      spec:
+        display:
+          name: Go heap in use
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(go_memstats_heap_inuse_bytes{job="blocky", pod=~"$pod"}, "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+    restarts:
+      kind: Panel
+      spec:
+        display:
+          name: Restarts
+          description: Container restarts per replica. OOMKilled was the failure mode before the limit and GOMEMLIMIT were raised.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace="network", container="app", pod=~"$pod"}[$__rate_interval])), "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+    goroutines:
+      kind: Panel
+      spec:
+        display:
+          name: Goroutines
+          description: Roughly one per in-flight query plus the fixed background set. A steady climb is a leak.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(go_goroutines{job="blocky", pod=~"$pod"}, "replica", "$1", "pod", "blocky-[0-9a-f]+-(.+)")
+                  seriesNameFormat: "{{replica}}"
+    network:
+      kind: Panel
+      spec:
+        display:
+          name: Network
+          description: Bytes in and out of the selected replicas, sent drawn below the axis. The daily spikes on received are the list downloads.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+            querySettings:
+              - queryIndex: 1
+                negativeY: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(process_network_receive_bytes_total{job="blocky", pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: received
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(process_network_transmit_bytes_total{job="blocky", pod=~"$pod"}[$__rate_interval]))
+                  seriesNameFormat: sent
+
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - {x: 0, y: 0, width: 4, height: 4, content: {$ref: "#/spec/panels/qps"}}
+          - {x: 4, y: 0, width: 4, height: 4, content: {$ref: "#/spec/panels/queriesRange"}}
+          - {x: 8, y: 0, width: 4, height: 4, content: {$ref: "#/spec/panels/blockedRatio"}}
+          - {x: 12, y: 0, width: 4, height: 4, content: {$ref: "#/spec/panels/cacheHitRatio"}}
+          - {x: 16, y: 0, width: 4, height: 4, content: {$ref: "#/spec/panels/upstreamP95"}}
+          - {x: 20, y: 0, width: 4, height: 4, content: {$ref: "#/spec/panels/activeClients"}}
+          - {x: 0, y: 4, width: 4, height: 4, content: {$ref: "#/spec/panels/blockingEnabled"}}
+          - {x: 4, y: 4, width: 4, height: 4, content: {$ref: "#/spec/panels/replicasUp"}}
+          - {x: 8, y: 4, width: 4, height: 4, content: {$ref: "#/spec/panels/denylistEntries"}}
+          - {x: 12, y: 4, width: 4, height: 4, content: {$ref: "#/spec/panels/listAge"}}
+          - {x: 16, y: 4, width: 4, height: 4, content: {$ref: "#/spec/panels/errorRatio"}}
+          - {x: 20, y: 4, width: 4, height: 4, content: {$ref: "#/spec/panels/version"}}
+    - kind: Grid
+      spec:
+        display:
+          title: Traffic
+          collapse:
+            open: true
+        items:
+          - {x: 0, y: 0, width: 12, height: 8, content: {$ref: "#/spec/panels/responsesByType"}}
+          - {x: 12, y: 0, width: 12, height: 8, content: {$ref: "#/spec/panels/queriesByRecordType"}}
+          - {x: 0, y: 8, width: 6, height: 8, content: {$ref: "#/spec/panels/responseTypeShare"}}
+          - {x: 6, y: 8, width: 6, height: 8, content: {$ref: "#/spec/panels/responseCodeShare"}}
+          - {x: 12, y: 8, width: 12, height: 8, content: {$ref: "#/spec/panels/responseCodes"}}
+          - {x: 0, y: 16, width: 12, height: 7, content: {$ref: "#/spec/panels/queriesPerReplica"}}
+          - {x: 12, y: 16, width: 12, height: 7, content: {$ref: "#/spec/panels/errorsPerReplica"}}
+    - kind: Grid
+      spec:
+        display:
+          title: Blocking
+          collapse:
+            open: true
+        items:
+          - {x: 0, y: 0, width: 12, height: 8, content: {$ref: "#/spec/panels/blockedRate"}}
+          - {x: 12, y: 0, width: 12, height: 8, content: {$ref: "#/spec/panels/blockedRatioOverTime"}}
+          - {x: 0, y: 8, width: 12, height: 9, content: {$ref: "#/spec/panels/topBlockedClients"}}
+          - {x: 12, y: 8, width: 6, height: 9, content: {$ref: "#/spec/panels/listEntries"}}
+          - {x: 18, y: 8, width: 6, height: 9, content: {$ref: "#/spec/panels/listRefreshes"}}
+    - kind: Grid
+      spec:
+        display:
+          title: Upstreams and latency
+          collapse:
+            open: true
+        items:
+          - {x: 0, y: 0, width: 16, height: 8, content: {$ref: "#/spec/panels/resolvedByUpstream"}}
+          - {x: 16, y: 0, width: 8, height: 8, content: {$ref: "#/spec/panels/upstreamShare"}}
+          - {x: 0, y: 8, width: 12, height: 8, content: {$ref: "#/spec/panels/upstreamLatency"}}
+          - {x: 12, y: 8, width: 12, height: 8, content: {$ref: "#/spec/panels/latencyByType"}}
+          - {x: 0, y: 16, width: 24, height: 7, content: {$ref: "#/spec/panels/fastAnswers"}}
+    - kind: Grid
+      spec:
+        display:
+          title: Cache and prefetching
+          collapse:
+            open: false
+        items:
+          - {x: 0, y: 0, width: 12, height: 7, content: {$ref: "#/spec/panels/cacheHitRatioOverTime"}}
+          - {x: 12, y: 0, width: 12, height: 7, content: {$ref: "#/spec/panels/cacheOps"}}
+          - {x: 0, y: 7, width: 8, height: 7, content: {$ref: "#/spec/panels/cacheEntries"}}
+          - {x: 8, y: 7, width: 8, height: 7, content: {$ref: "#/spec/panels/prefetch"}}
+          - {x: 16, y: 7, width: 8, height: 7, content: {$ref: "#/spec/panels/redisDrops"}}
+    - kind: Grid
+      spec:
+        display:
+          title: Clients
+          collapse:
+            open: false
+        items:
+          - {x: 0, y: 0, width: 10, height: 10, content: {$ref: "#/spec/panels/topClients"}}
+          - {x: 10, y: 0, width: 14, height: 10, content: {$ref: "#/spec/panels/clientTable"}}
+          - {x: 0, y: 10, width: 24, height: 8, content: {$ref: "#/spec/panels/clientRates"}}
+    - kind: Grid
+      spec:
+        display:
+          title: Resources
+          collapse:
+            open: false
+        items:
+          - {x: 0, y: 0, width: 8, height: 7, content: {$ref: "#/spec/panels/cpu"}}
+          - {x: 8, y: 0, width: 8, height: 7, content: {$ref: "#/spec/panels/memory"}}
+          - {x: 16, y: 0, width: 8, height: 7, content: {$ref: "#/spec/panels/heap"}}
+          - {x: 0, y: 7, width: 8, height: 7, content: {$ref: "#/spec/panels/restarts"}}
+          - {x: 8, y: 7, width: 8, height: 7, content: {$ref: "#/spec/panels/goroutines"}}
+          - {x: 16, y: 7, width: 8, height: 7, content: {$ref: "#/spec/panels/network"}}
