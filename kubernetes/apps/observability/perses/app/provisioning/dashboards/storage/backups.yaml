@@ -1,0 +1,542 @@
+---
+# Backups: VolSync (job="volsync-metrics") and CloudNativePG's barman-cloud
+# plugin, against rustfs at 192.168.1.2.
+#
+#   - VolSync exports no last-run timestamp. "Last run" is the newest point at
+#     which its run counter moved, found with a 3-day subquery; a VolSync
+#     restart resets the counter, after which only runs since are visible.
+#   - cnpg_pg_stat_archiver_last_archived_time is 0 on an instance that has not
+#     archived since it started; "> 0" keeps that from reading as 56 years.
+#   - Database series are keyed by namespace -- one CNPG Cluster per app
+#     namespace, as CLAUDE.md requires.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: backups
+  project: storage
+spec:
+  display:
+    name: Backups
+    description: 'Everything that leaves the cluster for rustfs on 192.168.1.2: VolSync restic snapshots of app volumes, and CloudNativePG base backups plus continuous WAL archiving.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    target:
+      kind: Panel
+      spec:
+        display:
+          name: Backup target reachable
+          description: ICMP to rustfs over the last 5 minutes. When it is unreachable backups stop -- and a demoted CNPG primary refuses to start until it has flushed WAL there, so database standbys wedge too.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.9
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: avg_over_time(probe_success{instance="192.168.1.2"}[5m])
+    vsCount:
+      kind: Panel
+      spec:
+        display:
+          name: Volumes protected
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(volsync_volume_out_of_sync{role="source"})
+    vsOverdue:
+      kind: Panel
+      spec:
+        display:
+          name: Volumes overdue
+          description: ReplicationSources that missed their schedule and have not caught up.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(volsync_volume_out_of_sync{role="source"})
+    vsOldest:
+      kind: Panel
+      spec:
+        display:
+          name: Oldest volume backup
+          description: Hours since the least recent VolSync run finished. Schedules are daily, so past ~26h one was skipped. Derived from the run counter moving; a VolSync restart forgets runs older than three days.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: hours
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 26
+                  color: '#ffb300'
+                - value: 50
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max((time() - max by (obj_name) (max_over_time((timestamp(volsync_sync_duration_seconds_count{role="source"}) and changes(volsync_sync_duration_seconds_count{role="source"}[10m]) > 0)[3d:5m]))) / 3600)
+    walOldest:
+      kind: Panel
+      spec:
+        display:
+          name: Oldest WAL archive
+          description: Minutes since the least recently archived database shipped a WAL segment. archive_timeout ships a segment every 5 minutes while there are writes -- but an idle database writes no WAL and archives nothing, so check WAL waiting before reading hours here as a stall.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: minutes
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 30
+                  color: '#ffb300'
+                - value: 360
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - min(cnpg_pg_stat_archiver_last_archived_time > 0)) / 60
+    baseOldest:
+      kind: Panel
+      spec:
+        display:
+          name: Oldest base backup
+          description: Hours since the oldest of the databases' latest base backups.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: hours
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 26
+                  color: '#ffb300'
+                - value: 50
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - min(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp > 0)) / 3600
+    vsTable:
+      kind: Panel
+      spec:
+        display:
+          name: Per volume
+          description: One row per ReplicationSource. Overdue 1 means the latest scheduled run has not happened.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: obj_name
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - obj_name
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: obj_name
+                header: Obj_name
+                enableSorting: true
+              - name: 'value #1'
+                header: Last run (h ago)
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+              - name: 'value #2'
+                header: Avg duration
+                enableSorting: true
+                format:
+                  unit: seconds
+                  decimalPlaces: 0
+              - name: 'value #3'
+                header: Runs (3d)
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #4'
+                header: Missed (3d)
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #5'
+                header: Overdue
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - max by (obj_name) (max_over_time((timestamp(volsync_sync_duration_seconds_count{role="source"}) and changes(volsync_sync_duration_seconds_count{role="source"}[10m]) > 0)[3d:5m]))) / 3600
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (obj_name) (increase(volsync_sync_duration_seconds_sum{role="source"}[3d]) / increase(volsync_sync_duration_seconds_count{role="source"}[3d]))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(max by (obj_name) (increase(volsync_sync_duration_seconds_count{role="source"}[3d])))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(max by (obj_name) (increase(volsync_missed_intervals_total{role="source"}[3d])))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (obj_name) (volsync_volume_out_of_sync{role="source"})
+    vsDuration:
+      kind: Panel
+      spec:
+        display:
+          name: Run duration
+          description: One bar per run, roughly. immich and samba are the long ones because they hold the photo library and the shares.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (obj_name) (increase(volsync_sync_duration_seconds_sum{role="source"}[1h]) / increase(volsync_sync_duration_seconds_count{role="source"}[1h]))
+                  seriesNameFormat: '{{obj_name}}'
+                  minStep: 1h
+    dbTable:
+      kind: Panel
+      spec:
+        display:
+          name: Per database
+          description: Recovery window is how many days back point-in-time recovery can go. WAL waiting is segments written but not yet shipped -- it should hover near zero.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: namespace
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - namespace
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: namespace
+                header: Namespace
+                enableSorting: true
+              - name: 'value #1'
+                header: WAL archived (min ago)
+                enableSorting: true
+                sort: desc
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+              - name: 'value #2'
+                header: Base backup (h ago)
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+              - name: 'value #3'
+                header: Recovery window
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+              - name: 'value #4'
+                header: WAL waiting
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #5'
+                header: Archive failures
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - max by (namespace) (cnpg_pg_stat_archiver_last_archived_time > 0)) / 60
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp > 0)) / 3600
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - max by (namespace) (barman_cloud_cloudnative_pg_io_first_recoverability_point > 0)) / 86400
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_collector_pg_wal_archive_status{value="ready"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_pg_stat_archiver_failed_count)
+    walAge:
+      kind: Panel
+      spec:
+        display:
+          name: Time since last WAL archive
+          description: 'Sawtooth is healthy: each drop is a segment shipped. A long flat climb with nothing in WAL waiting is an idle database, not a stuck archiver -- oxicloud went 14 days like that.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: minutes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - max by (namespace) (cnpg_pg_stat_archiver_last_archived_time > 0)) / 60
+                  seriesNameFormat: '{{namespace}}'
+    walReady:
+      kind: Panel
+      spec:
+        display:
+          name: WAL waiting to be archived
+          description: A climbing line is a database whose archiver cannot reach rustfs.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_collector_pg_wal_archive_status{value="ready"})
+                  seriesNameFormat: '{{namespace}}'
+    archFail:
+      kind: Panel
+      spec:
+        display:
+          name: Archive failures
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (increase(cnpg_pg_stat_archiver_failed_count[$__rate_interval])) > 0
+                  seriesNameFormat: '{{namespace}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/target'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/vsCount'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/vsOverdue'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/vsOldest'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/walOldest'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/baseOldest'
+    - kind: Grid
+      spec:
+        display:
+          title: Volumes (VolSync)
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 14
+            height: 10
+            content:
+              $ref: '#/spec/panels/vsTable'
+          - x: 14
+            "y": 0
+            width: 10
+            height: 10
+            content:
+              $ref: '#/spec/panels/vsDuration'
+    - kind: Grid
+      spec:
+        display:
+          title: Databases (CloudNativePG)
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 14
+            height: 10
+            content:
+              $ref: '#/spec/panels/dbTable'
+          - x: 14
+            "y": 0
+            width: 10
+            height: 10
+            content:
+              $ref: '#/spec/panels/walAge'
+          - x: 0
+            "y": 10
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/walReady'
+          - x: 12
+            "y": 10
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/archFail'

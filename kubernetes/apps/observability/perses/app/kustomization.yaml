@@ -29,6 +29,9 @@ configMapGenerator:
       - network-internet.yaml=provisioning/dashboards/network/internet.yaml
       - network-split-dns.yaml=provisioning/dashboards/network/split-dns.yaml
       - network-tailscale.yaml=provisioning/dashboards/network/tailscale.yaml
+      - storage-longhorn.yaml=provisioning/dashboards/storage/longhorn.yaml
+      - storage-backups.yaml=provisioning/dashboards/storage/backups.yaml
+      - database-postgres.yaml=provisioning/dashboards/database/postgres.yaml
     options:
       # The HelmRelease mounts this by name.
       disableNameSuffixHash: true

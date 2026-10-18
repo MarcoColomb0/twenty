@@ -1,0 +1,1017 @@
+---
+# CloudNativePG clusters, scraped by one hand-written PodMonitor per Cluster.
+#
+#   - $database is the namespace: one Cluster per app namespace.
+#   - The primary is the instance with cnpg_pg_replication_in_recovery == 0.
+#   - XID age is shown against 2^31, the wraparound limit.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: postgres
+  project: database
+spec:
+  display:
+    name: PostgreSQL
+    description: 'Every CloudNativePG cluster -- one per app namespace, a primary and a replica each: health, replication, load, size and the WAL that feeds backups.'
+  duration: 6h
+  refreshInterval: 1m
+  variables:
+    - kind: ListVariable
+      spec:
+        name: database
+        display:
+          name: Database
+          hidden: false
+          description: The app namespace; each holds exactly one Cluster named postgres-<namespace>.
+        allowMultiple: true
+        allowAllValue: true
+        customAllValue: .*
+        defaultValue: $__all
+        sort: alphabetical-asc
+        plugin:
+          kind: PrometheusLabelValuesVariable
+          spec:
+            labelName: namespace
+            matchers:
+              - cnpg_collector_up
+  panels:
+    instances:
+      kind: Panel
+      spec:
+        display:
+          name: Instances up
+          description: Postgres instances whose exporter can reach the database.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.9
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cnpg_collector_up{namespace=~"$database"}) / count(cnpg_collector_up{namespace=~"$database"})
+    primaries:
+      kind: Panel
+      spec:
+        display:
+          name: Clusters with a primary
+          description: Clusters with exactly one instance out of recovery. Below 100% means a cluster is mid-failover or has no writable instance.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(cnpg_pg_replication_in_recovery{namespace=~"$database"} == 0) / count(count by (namespace) (cnpg_collector_up{namespace=~"$database"}))
+    lag:
+      kind: Panel
+      spec:
+        display:
+          name: Worst replication lag
+          description: How far the furthest-behind replica is from its primary. A failover to it would lose this much.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 10
+                  color: '#ffb300'
+                - value: 60
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_pg_replication_lag{namespace=~"$database"})
+    tps:
+      kind: Panel
+      spec:
+        display:
+          name: Transactions / s
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 1
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cnpg_pg_stat_database_xact_commit{namespace=~"$database"}[$__rate_interval]))
+    conns:
+      kind: Panel
+      spec:
+        display:
+          name: Connections
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cnpg_backends_total{namespace=~"$database"})
+    size:
+      kind: Panel
+      spec:
+        display:
+          name: Data
+          description: App databases only, one copy -- each also exists on the replica.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: bytes
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(max by (namespace, datname) (cnpg_pg_database_size_bytes{namespace=~"$database", datname!~"postgres|template.*"}))
+    failovers:
+      kind: Panel
+      spec:
+        display:
+          name: Role changes
+          description: Instances that switched between primary and replica in the selected range. Node drains and reboots cause these; CNPG handles them, but each is a moment of writes failing.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(changes(cnpg_pg_replication_in_recovery{namespace=~"$database"}[$__range]) > 0) or vector(0)
+    xid:
+      kind: Panel
+      spec:
+        display:
+          name: Oldest XID age
+          description: Distance to transaction-ID wraparound for the oldest database. Autovacuum keeps this low; a climb means vacuum is blocked, and at 100% Postgres stops accepting writes.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.4
+                  color: '#ffb300'
+                - value: 0.75
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_pg_database_xid_age{namespace=~"$database"}) / 2147483648
+    longTx:
+      kind: Panel
+      spec:
+        display:
+          name: Longest open transaction
+          description: Excludes the backup and the instance manager. A transaction left open holds back vacuum and WAL recycling.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 300
+                  color: '#ffb300'
+                - value: 3600
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_backends_max_tx_duration_seconds{namespace=~"$database", application_name!~"barman_cloud_backup|cnpg-instance-manager"})
+    deadlocks:
+      kind: Panel
+      spec:
+        display:
+          name: Deadlocks
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(cnpg_pg_stat_database_deadlocks{namespace=~"$database"}[$__range]))
+    cache:
+      kind: Panel
+      spec:
+        display:
+          name: Cache hit ratio
+          description: Reads served from shared_buffers over the selected range. Under 99% on a small database usually means shared_buffers is too small for it.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.9
+                  color: '#ffb300'
+                - value: 0.99
+                  color: '#43a047'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cnpg_pg_stat_database_blks_hit{namespace=~"$database"}[$__range])) / (sum(rate(cnpg_pg_stat_database_blks_hit{namespace=~"$database"}[$__range])) + sum(rate(cnpg_pg_stat_database_blks_read{namespace=~"$database"}[$__range])))
+    versions:
+      kind: Panel
+      spec:
+        display:
+          name: Postgres versions
+          description: Distinct Postgres versions across the clusters. Each Cluster pins its own image, so they drift apart until each is bumped; the table shows which is where.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(count by (full) (cnpg_collector_postgres_version{namespace=~"$database"}))
+    clusterTable:
+      kind: Panel
+      spec:
+        display:
+          name: Clusters
+          description: One row per Cluster. The pod column names the current primary.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: namespace
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - namespace
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: namespace
+                header: Namespace
+                enableSorting: true
+              - name: 'value #1'
+                header: Primary
+                enableSorting: true
+                hide: true
+              - name: 'value #2'
+                header: Instances
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #3'
+                header: Version
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+              - name: 'value #4'
+                header: Data
+                enableSorting: true
+                format:
+                  unit: bytes
+                  decimalPlaces: 1
+                sort: desc
+              - name: 'value #5'
+                header: Connections
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 0
+              - name: 'value #6'
+                header: Lag
+                enableSorting: true
+                format:
+                  unit: seconds
+                  decimalPlaces: 0
+              - name: 'value #7'
+                header: TPS
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 2
+              - name: 'pod #1'
+                header: Primary pod
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace, pod) (cnpg_pg_replication_in_recovery{namespace=~"$database"} == 0)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (cnpg_collector_up{namespace=~"$database"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_collector_postgres_version{namespace=~"$database"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (max by (namespace, datname) (cnpg_pg_database_size_bytes{namespace=~"$database", datname!~"postgres|template.*"}))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (cnpg_backends_total{namespace=~"$database"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_pg_replication_lag{namespace=~"$database"})
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_pg_stat_database_xact_commit{namespace=~"$database"}[$__range]))
+    tpsByDb:
+      kind: Panel
+      spec:
+        display:
+          name: Transactions / s
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: tx/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_pg_stat_database_xact_commit{namespace=~"$database"}[$__rate_interval]))
+                  seriesNameFormat: '{{namespace}}'
+    rollbacks:
+      kind: Panel
+      spec:
+        display:
+          name: Rollbacks / s
+          description: Some apps roll back routinely; a sudden jump in one is usually it failing a write and retrying.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: tx/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_pg_stat_database_xact_rollback{namespace=~"$database"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{namespace}}'
+    tuples:
+      kind: Panel
+      spec:
+        display:
+          name: Rows written
+          description: Inserts, updates and deletes together.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: rows/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_pg_stat_database_tup_inserted{namespace=~"$database"}[$__rate_interval]) + rate(cnpg_pg_stat_database_tup_updated{namespace=~"$database"}[$__rate_interval]) + rate(cnpg_pg_stat_database_tup_deleted{namespace=~"$database"}[$__rate_interval]))
+                  seriesNameFormat: '{{namespace}}'
+    fetched:
+      kind: Panel
+      spec:
+        display:
+          name: Rows read
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                shortValues: true
+              label: rows/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_pg_stat_database_tup_fetched{namespace=~"$database"}[$__rate_interval]))
+                  seriesNameFormat: '{{namespace}}'
+    connsByApp:
+      kind: Panel
+      spec:
+        display:
+          name: Connections by client
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - last
+                - max
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace, application_name) (cnpg_backends_total{namespace=~"$database"})
+                  seriesNameFormat: '{{namespace}} {{application_name}}'
+    temp:
+      kind: Panel
+      spec:
+        display:
+          name: Temp files written
+          description: Queries that spilled sorts or hashes to disk because work_mem was too small for them.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_pg_stat_database_temp_bytes{namespace=~"$database"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{namespace}}'
+    lagTs:
+      kind: Panel
+      spec:
+        display:
+          name: Replication lag
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_pg_replication_lag{namespace=~"$database"})
+                  seriesNameFormat: '{{namespace}}'
+    replayBytes:
+      kind: Panel
+      spec:
+        display:
+          name: Replay delay
+          description: WAL the replica has received but not yet applied.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_pg_stat_replication_replay_diff_bytes{namespace=~"$database"})
+                  seriesNameFormat: '{{namespace}}'
+    dbSize:
+      kind: Panel
+      spec:
+        display:
+          name: Database size
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - last
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace, datname) (cnpg_pg_database_size_bytes{namespace=~"$database", datname!~"postgres|template.*"})
+                  seriesNameFormat: '{{datname}}'
+    walRate:
+      kind: Panel
+      spec:
+        display:
+          name: WAL generated
+          description: Every byte here is shipped to rustfs by the archiver, so this is also the backup bandwidth.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (rate(cnpg_collector_wal_bytes{namespace=~"$database"}[$__rate_interval]))
+                  seriesNameFormat: '{{namespace}}'
+    walDir:
+      kind: Panel
+      spec:
+        display:
+          name: pg_wal size
+          description: Segments kept on the volume. It grows when the archiver falls behind or a replication slot holds WAL back.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (namespace) (cnpg_collector_pg_wal{namespace=~"$database", value="size"})
+                  seriesNameFormat: '{{namespace}}'
+    checkpoints:
+      kind: Panel
+      spec:
+        display:
+          name: Requested checkpoints
+          description: Checkpoints forced by WAL volume rather than the timer. Frequent ones mean max_wal_size is small for the write load.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (namespace) (increase(cnpg_pg_stat_checkpointer_checkpoints_req{namespace=~"$database"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{namespace}}'
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 3
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~"$database", pod=~"postgres-.*", container="postgres"}[$__rate_interval]))
+                  seriesNameFormat: '{{pod}}'
+    mem:
+      kind: Panel
+      spec:
+        display:
+          name: Memory
+          description: These clusters set a memory request below the limit on purpose, so an OOM on a spike does not take the primary down.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (container_memory_working_set_bytes{namespace=~"$database", pod=~"postgres-.*", container="postgres"})
+                  seriesNameFormat: '{{pod}}'
+    restarts:
+      kind: Panel
+      spec:
+        display:
+          name: Restarts
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=~"$database", pod=~"postgres-.*"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{pod}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/instances'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/primaries'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/lag'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/tps'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/conns'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/size'
+          - x: 0
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/failovers'
+          - x: 4
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/xid'
+          - x: 8
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/longTx'
+          - x: 12
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/deadlocks'
+          - x: 16
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/cache'
+          - x: 20
+            "y": 4
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/versions'
+    - kind: Grid
+      spec:
+        display:
+          title: Clusters
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 9
+            content:
+              $ref: '#/spec/panels/clusterTable'
+    - kind: Grid
+      spec:
+        display:
+          title: Load
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/tpsByDb'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/rollbacks'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/tuples'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/fetched'
+          - x: 0
+            "y": 16
+            width: 16
+            height: 8
+            content:
+              $ref: '#/spec/panels/connsByApp'
+          - x: 16
+            "y": 16
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/temp'
+    - kind: Grid
+      spec:
+        display:
+          title: Replication
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/lagTs'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/replayBytes'
+    - kind: Grid
+      spec:
+        display:
+          title: Size and WAL
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/dbSize'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/walRate'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/walDir'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/checkpoints'
+    - kind: Grid
+      spec:
+        display:
+          title: Resources
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/mem'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/restarts'
+  links:
+    - name: CloudNativePG monitoring
+      url: https://cloudnative-pg.io/documentation/current/monitoring/
+      targetBlank: true
