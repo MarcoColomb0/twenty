@@ -17,25 +17,49 @@ resources:
 # of truth for these, and a UI edit to one of them lasts until the next pass.
 # Experiment on a copy, then export it as YAML and commit.
 #
-# ConfigMap keys are flat, so dashboards are keyed <project>-<name>.yaml.
+# One ConfigMap per project, because a ConfigMap stops at 1MiB and the
+# dashboards together would not fit in one. The HelmRelease projects them all
+# into the same folder, so keys must be unique across them: <project>-<name>.
+# A new project needs its ConfigMap here and in the HelmRelease's volume.
+generatorOptions:
+  # The HelmRelease mounts these by name.
+  disableNameSuffixHash: true
+  annotations:
+    # Perses variables use the same dollar-brace syntax Flux substitutes,
+    # and Flux would blank them.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
 configMapGenerator:
   - name: perses-provisioning
     files:
       - globaldatasources.yaml=provisioning/globaldatasources.yaml
       - projects.yaml=provisioning/projects.yaml
+  - name: perses-dashboards-database
+    files:
+      - database-postgres.yaml=provisioning/dashboards/database/postgres.yaml
+  - name: perses-dashboards-flux-system
+    files:
+      - flux-system-flux.yaml=provisioning/dashboards/flux-system/flux.yaml
+  - name: perses-dashboards-kube-system
+    files:
+      - kube-system-cilium.yaml=provisioning/dashboards/kube-system/cilium.yaml
+      - kube-system-nodes.yaml=provisioning/dashboards/kube-system/nodes.yaml
+      - kube-system-spegel.yaml=provisioning/dashboards/kube-system/spegel.yaml
+  - name: perses-dashboards-network
+    files:
       - network-blocky.yaml=provisioning/dashboards/network/blocky.yaml
       - network-cloudflare-tunnel.yaml=provisioning/dashboards/network/cloudflare-tunnel.yaml
       - network-gateways.yaml=provisioning/dashboards/network/gateways.yaml
       - network-internet.yaml=provisioning/dashboards/network/internet.yaml
       - network-split-dns.yaml=provisioning/dashboards/network/split-dns.yaml
       - network-tailscale.yaml=provisioning/dashboards/network/tailscale.yaml
-      - storage-longhorn.yaml=provisioning/dashboards/storage/longhorn.yaml
+  - name: perses-dashboards-security
+    files:
+      - security-crowdsec.yaml=provisioning/dashboards/security/crowdsec.yaml
+      - security-pocket-id.yaml=provisioning/dashboards/security/pocket-id.yaml
+  - name: perses-dashboards-storage
+    files:
       - storage-backups.yaml=provisioning/dashboards/storage/backups.yaml
-      - database-postgres.yaml=provisioning/dashboards/database/postgres.yaml
-    options:
-      # The HelmRelease mounts this by name.
-      disableNameSuffixHash: true
-      annotations:
-        # Perses variables use the same dollar-brace syntax Flux substitutes,
-        # and Flux would blank them.
-        kustomize.toolkit.fluxcd.io/substitute: disabled
+      - storage-longhorn.yaml=provisioning/dashboards/storage/longhorn.yaml
+  - name: perses-dashboards-system-upgrade
+    files:
+      - system-upgrade-tuppr.yaml=provisioning/dashboards/system-upgrade/tuppr.yaml

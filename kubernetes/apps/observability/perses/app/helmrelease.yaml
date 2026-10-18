@@ -94,9 +94,26 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
 
     volumes:
+      # One folder, many ConfigMaps: see kustomization.yaml.
       - name: provisioning
-        configMap:
-          name: perses-provisioning
+        projected:
+          sources:
+            - configMap:
+                name: perses-provisioning
+            - configMap:
+                name: perses-dashboards-database
+            - configMap:
+                name: perses-dashboards-flux-system
+            - configMap:
+                name: perses-dashboards-kube-system
+            - configMap:
+                name: perses-dashboards-network
+            - configMap:
+                name: perses-dashboards-security
+            - configMap:
+                name: perses-dashboards-storage
+            - configMap:
+                name: perses-dashboards-system-upgrade
     volumeMounts:
       - name: provisioning
         mountPath: /etc/perses/provisioning

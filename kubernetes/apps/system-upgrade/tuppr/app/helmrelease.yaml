@@ -14,6 +14,10 @@ spec:
     # patches/controller/machine-features.yaml grants os:admin to this namespace.
     talosServiceAccount:
       create: true
+    # Upgrade phase per node, Talos and Kubernetes versions, last completion.
+    monitoring:
+      serviceMonitor:
+        enabled: true
     resources:
       requests:
         cpu: 10m

@@ -1,0 +1,15 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: pocket-id
+spec:
+  # Pocket ID's OpenTelemetry Prometheus exporter, enabled by metrics.enabled
+  # on the instance. The container declares no named port, hence portNumber.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pocket-id
+      app.kubernetes.io/instance: pocket-id
+  podMetricsEndpoints:
+    - portNumber: 9464
+      path: /metrics

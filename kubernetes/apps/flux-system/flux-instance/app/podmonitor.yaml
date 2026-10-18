@@ -1,0 +1,20 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flux-controllers
+spec:
+  # flux-operator's own ServiceMonitor covers only the operator. The
+  # controllers it deploys serve controller-runtime metrics and the per-object
+  # gotk_reconcile_duration_seconds on http-prom, which nothing scraped.
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - helm-controller
+          - kustomize-controller
+          - notification-controller
+          - source-controller
+  podMetricsEndpoints:
+    - port: http-prom
