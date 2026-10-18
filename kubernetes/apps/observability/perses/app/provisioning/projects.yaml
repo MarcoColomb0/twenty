@@ -8,3 +8,15 @@
   spec:
     display:
       name: network
+- kind: Project
+  metadata:
+    name: storage
+  spec:
+    display:
+      name: storage
+- kind: Project
+  metadata:
+    name: database
+  spec:
+    display:
+      name: database

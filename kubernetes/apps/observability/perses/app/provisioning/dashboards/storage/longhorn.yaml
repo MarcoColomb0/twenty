@@ -1,0 +1,966 @@
+---
+# Longhorn (job="longhorn-backend"), plus kubelet volume stats and pvc-autoresizer.
+#
+#   - Robustness is one series per state with value 1 for the current one; the
+#     volume table folds them into a code (0 healthy, 1 degraded, 2 faulted,
+#     3 detached) that the State column maps back to text.
+#   - kubelet names the claim "persistentvolumeclaim" and Longhorn "pvc";
+#     label_replace aligns them so the table can join on pvc.
+#   - Latencies arrive in nanoseconds and are divided by 1e9.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: longhorn
+  project: storage
+spec:
+  display:
+    name: Longhorn
+    description: 'Replicated block storage on all three nodes: volume health, replicas, capacity against the 200% over-provisioning ceiling, and per-volume I/O.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    nodesReady:
+      kind: Panel
+      spec:
+        display:
+          name: Nodes ready
+          description: Longhorn's own view of its nodes. A node not ready here takes every replica on it out of play.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.6
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_node_status{condition="ready"} == 1) / count(longhorn_node_status{condition="ready"})
+    healthy:
+      kind: Panel
+      spec:
+        display:
+          name: Healthy volumes
+          description: Attached volumes with every replica in sync. Detached volumes report robustness 'unknown' and are not counted here.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="healthy"} == 1)
+    degraded:
+      kind: Panel
+      spec:
+        display:
+          name: Degraded
+          description: Volumes running on fewer replicas than asked for -- still serving, but one more failure from data loss. Normal briefly after a node reboot while replicas rebuild.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="degraded"} == 1) or vector(0)
+    faulted:
+      kind: Panel
+      spec:
+        display:
+          name: Faulted
+          description: No usable replica at all. The pod using it cannot start.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="faulted"} == 1) or vector(0)
+    rebuilding:
+      kind: Panel
+      spec:
+        display:
+          name: Replicas rebuilding
+          description: 'Replicas in write-only mode: being rebuilt from a healthy one and not yet readable.'
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_engine_replica_mode{mode="WO"} == 1) or vector(0)
+    errored:
+      kind: Panel
+      spec:
+        display:
+          name: Replicas in error
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_engine_replica_mode{mode="ERR"} == 1) or vector(0)
+    usedPct:
+      kind: Panel
+      spec:
+        display:
+          name: Disk used
+          description: Real bytes on the Longhorn disks across all nodes.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.7
+                  color: '#ffb300'
+                - value: 0.85
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(longhorn_node_storage_usage_bytes) / sum(longhorn_node_storage_capacity_bytes)
+    scheduledPct:
+      kind: Panel
+      spec:
+        display:
+          name: Scheduled
+          description: Busiest node's provisioned volume size against its disk. storage-over-provisioning-percentage is 200, so Longhorn refuses new replicas on a node past 200% -- this is what blocks a rebuild, not real usage.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1.5
+                  color: '#ffb300'
+                - value: 1.9
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(longhorn_node_storage_scheduled_bytes / longhorn_node_storage_capacity_bytes)
+    volumes:
+      kind: Panel
+      spec:
+        display:
+          name: Volumes
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_capacity_bytes)
+    allocated:
+      kind: Panel
+      spec:
+        display:
+          name: Allocated
+          description: Blocks the volumes have actually written, one replica's worth. Thin provisioning keeps this far below their combined size.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: bytes
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(longhorn_volume_actual_size_bytes)
+    volumeTable:
+      kind: Panel
+      spec:
+        display:
+          name: Volumes
+          description: Every Longhorn volume. Filesystem used is what the app sees and what pvc-autoresizer acts on; it is empty for detached volumes.
+        plugin:
+          kind: Table
+          spec:
+            density: compact
+            transforms:
+              - kind: MergeIndexedColumns
+                spec:
+                  column: pvc
+              - kind: JoinByColumnValue
+                spec:
+                  columns:
+                    - pvc
+            columnSettings:
+              - name: timestamp
+                hide: true
+              - name: pvc
+                header: Pvc
+                enableSorting: true
+              - name: 'value #1'
+                header: State
+                enableSorting: true
+                cellSettings:
+                  - condition:
+                      kind: Value
+                      spec:
+                        value: "0"
+                    text: healthy
+                    backgroundColor: '#2e7d32'
+                  - condition:
+                      kind: Value
+                      spec:
+                        value: "1"
+                    text: degraded
+                    backgroundColor: '#f9a825'
+                  - condition:
+                      kind: Value
+                      spec:
+                        value: "2"
+                    text: faulted
+                    backgroundColor: '#c62828'
+                  - condition:
+                      kind: Value
+                      spec:
+                        value: "3"
+                    text: detached
+                    backgroundColor: '#455a64'
+              - name: 'value #2'
+                header: Size
+                enableSorting: true
+                format:
+                  unit: bytes
+                  decimalPlaces: 1
+                sort: desc
+              - name: 'value #3'
+                header: Allocated
+                enableSorting: true
+                format:
+                  unit: bytes
+                  decimalPlaces: 1
+              - name: 'value #4'
+                header: Filesystem used
+                enableSorting: true
+                format:
+                  unit: percent-decimal
+                  decimalPlaces: 1
+              - name: 'value #5'
+                header: Read IOPS
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+              - name: 'value #6'
+                header: Write IOPS
+                enableSorting: true
+                format:
+                  unit: decimal
+                  decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pvc) ((longhorn_volume_robustness{state="healthy"} == 1) * 0 or (longhorn_volume_robustness{state="degraded"} == 1) * 1 or (longhorn_volume_robustness{state="faulted"} == 1) * 2 or (longhorn_volume_robustness{state="unknown"} == 1) * 3)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pvc) (longhorn_volume_capacity_bytes)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pvc) (longhorn_volume_actual_size_bytes)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pvc) (label_replace(kubelet_volume_stats_used_bytes{persistentvolumeclaim!=""}, "pvc", "$1", "persistentvolumeclaim", "(.*)")) / max by (pvc) (label_replace(kubelet_volume_stats_capacity_bytes{persistentvolumeclaim!=""}, "pvc", "$1", "persistentvolumeclaim", "(.*)"))
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pvc) (longhorn_volume_read_iops)
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (pvc) (longhorn_volume_write_iops)
+    robustness:
+      kind: Panel
+      spec:
+        display:
+          name: Volumes by state
+          description: 'Detached is what Longhorn reports as robustness ''unknown'': nothing is using the volume, VolSync caches mostly.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+            querySettings:
+              - queryIndex: 0
+                colorMode: fixed-single
+                colorValue: '#43a047'
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#ffb300'
+              - queryIndex: 2
+                colorMode: fixed-single
+                colorValue: '#e53935'
+              - queryIndex: 3
+                colorMode: fixed-single
+                colorValue: '#78909c'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="healthy"} == 1)
+                  seriesNameFormat: healthy
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="degraded"} == 1)
+                  seriesNameFormat: degraded
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="faulted"} == 1)
+                  seriesNameFormat: faulted
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_volume_robustness{state="unknown"} == 1)
+                  seriesNameFormat: detached
+    replicaModes:
+      kind: Panel
+      spec:
+        display:
+          name: Replicas rebuilding and failed
+          description: After a node reboot every replica on it rebuilds, which is the climb and fall here.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            querySettings:
+              - queryIndex: 0
+                colorMode: fixed-single
+                colorValue: '#ffb300'
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_engine_replica_mode{mode="WO"} == 1) or vector(0)
+                  seriesNameFormat: rebuilding
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(longhorn_engine_replica_mode{mode="ERR"} == 1) or vector(0)
+                  seriesNameFormat: error
+    perNode:
+      kind: Panel
+      spec:
+        display:
+          name: Disk per node
+          description: Real usage against each node's Longhorn disk.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (longhorn_node_storage_usage_bytes)
+                  seriesNameFormat: used {{node}}
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (longhorn_node_storage_capacity_bytes)
+                  seriesNameFormat: capacity {{node}}
+    scheduled:
+      kind: Panel
+      spec:
+        display:
+          name: Scheduled per node
+          description: Provisioned size over disk. 200% is the hard ceiling for placing replicas.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (longhorn_node_storage_scheduled_bytes / longhorn_node_storage_capacity_bytes)
+                  seriesNameFormat: '{{node}}'
+    fsTop:
+      kind: Panel
+      spec:
+        display:
+          name: Fullest filesystems
+          description: pvc-autoresizer grows a volume when it passes its threshold (20% free by default), so a line that drops back down is a resize.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: table
+              values:
+                - last
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, max by (pvc) (label_replace(kubelet_volume_stats_used_bytes{persistentvolumeclaim!=""}, "pvc", "$1", "persistentvolumeclaim", "(.*)")) / max by (pvc) (label_replace(kubelet_volume_stats_capacity_bytes{persistentvolumeclaim!=""}, "pvc", "$1", "persistentvolumeclaim", "(.*)")))
+                  seriesNameFormat: '{{pvc}}'
+    resizes:
+      kind: Panel
+      spec:
+        display:
+          name: pvc-autoresizer
+          description: '''at storage_limit'' means a volume wanted to grow but has reached the ceiling in its annotation.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#e53935'
+              - queryIndex: 2
+                colorMode: fixed-single
+                colorValue: '#ffb300'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(pvcautoresizer_success_resize_total[$__rate_interval])) > 0
+                  seriesNameFormat: resized
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(pvcautoresizer_failed_resize_total[$__rate_interval])) > 0
+                  seriesNameFormat: failed
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(pvcautoresizer_limit_reached_total[$__rate_interval])) > 0
+                  seriesNameFormat: at storage_limit
+    iops:
+      kind: Panel
+      spec:
+        display:
+          name: IOPS, busiest volumes
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: IOPS
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(8, max by (pvc) (longhorn_volume_write_iops + longhorn_volume_read_iops))
+                  seriesNameFormat: '{{pvc}}'
+    throughput:
+      kind: Panel
+      spec:
+        display:
+          name: Throughput, busiest volumes
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(8, max by (pvc) (longhorn_volume_write_throughput + longhorn_volume_read_throughput))
+                  seriesNameFormat: '{{pvc}}'
+    writeLatency:
+      kind: Panel
+      spec:
+        display:
+          name: Write latency, slowest volumes
+          description: Longhorn reports latency in nanoseconds. A write is acknowledged only once every replica has it, so this includes the network hop to the other nodes.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(8, max by (pvc) (longhorn_volume_write_latency)) / 1e9
+                  seriesNameFormat: '{{pvc}}'
+    readLatency:
+      kind: Panel
+      spec:
+        display:
+          name: Read latency, slowest volumes
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(8, max by (pvc) (longhorn_volume_read_latency)) / 1e9
+                  seriesNameFormat: '{{pvc}}'
+    imCpu:
+      kind: Panel
+      spec:
+        display:
+          name: Instance manager CPU
+          description: The instance manager runs every engine and replica process on a node; its CPU is the storage I/O cost.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 2
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (longhorn_instance_manager_cpu_usage_millicpu) / 1000
+                  seriesNameFormat: '{{node}}'
+    imMem:
+      kind: Panel
+      spec:
+        display:
+          name: Instance manager memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (longhorn_instance_manager_memory_usage_bytes)
+                  seriesNameFormat: '{{node}}'
+    mgr:
+      kind: Panel
+      spec:
+        display:
+          name: Manager memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (node) (longhorn_manager_memory_usage_bytes)
+                  seriesNameFormat: '{{node}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/nodesReady'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/healthy'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/degraded'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/faulted'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/rebuilding'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/errored'
+          - x: 0
+            "y": 4
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/usedPct'
+          - x: 6
+            "y": 4
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/scheduledPct'
+          - x: 12
+            "y": 4
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/volumes'
+          - x: 18
+            "y": 4
+            width: 6
+            height: 4
+            content:
+              $ref: '#/spec/panels/allocated'
+    - kind: Grid
+      spec:
+        display:
+          title: Volumes
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 24
+            height: 13
+            content:
+              $ref: '#/spec/panels/volumeTable'
+    - kind: Grid
+      spec:
+        display:
+          title: Health over time
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/robustness'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/replicaModes'
+    - kind: Grid
+      spec:
+        display:
+          title: Capacity
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/perNode'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/scheduled'
+          - x: 0
+            "y": 8
+            width: 16
+            height: 8
+            content:
+              $ref: '#/spec/panels/fsTop'
+          - x: 16
+            "y": 8
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/resizes'
+    - kind: Grid
+      spec:
+        display:
+          title: I/O
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/iops'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/throughput'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/writeLatency'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/readLatency'
+    - kind: Grid
+      spec:
+        display:
+          title: Longhorn itself
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/imCpu'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/imMem'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/mgr'
+  links:
+    - name: Longhorn metrics
+      url: https://longhorn.io/docs/latest/monitoring/metrics/
+      targetBlank: true
