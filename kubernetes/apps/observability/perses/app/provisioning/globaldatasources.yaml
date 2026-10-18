@@ -1,0 +1,20 @@
+---
+# Re-applied over the database every provisioning.interval, so editing this
+# datasource in the UI is undone on the next pass.
+#
+# proxy rather than directUrl: Perses relays the queries server-side, so the
+# browser never needs to reach Prometheus, which has no authentication.
+kind: GlobalDatasource
+metadata:
+  name: prometheus
+spec:
+  display:
+    name: Prometheus
+  default: true
+  plugin:
+    kind: PrometheusDatasource
+    spec:
+      proxy:
+        kind: HTTPProxy
+        spec:
+          url: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090

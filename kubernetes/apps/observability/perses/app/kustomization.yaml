@@ -6,9 +6,28 @@ components:
   - ../../../../components/volsync
 
 resources:
-  - ./datasource.yaml
   - ./helmrelease.yaml
   - ./helmrepository.yaml
   - ./httproute.yaml
   - ./oidcclient.yaml
   - ./secret.sops.yaml
+
+# Everything under provisioning/ is mounted into Perses' provisioning folder
+# and written over its database every provisioning.interval: git is the source
+# of truth for these, and a UI edit to one of them lasts until the next pass.
+# Experiment on a copy, then export it as YAML and commit.
+#
+# ConfigMap keys are flat, so dashboards are keyed <project>-<name>.yaml.
+configMapGenerator:
+  - name: perses-provisioning
+    files:
+      - globaldatasources.yaml=provisioning/globaldatasources.yaml
+      - projects.yaml=provisioning/projects.yaml
+      - network-blocky.yaml=provisioning/dashboards/network/blocky.yaml
+    options:
+      # The HelmRelease mounts this by name.
+      disableNameSuffixHash: true
+      annotations:
+        # Perses variables use the same dollar-brace syntax Flux substitutes,
+        # and Flux would blank them.
+        kustomize.toolkit.fluxcd.io/substitute: disabled
