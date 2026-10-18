@@ -25,19 +25,8 @@
         '{"releases": [$.{"version": $}], "sourceUrl": "https://github.com/siderolabs/talos"}',
       ],
     },
-    // grafana.com has no registry Renovate understands either. Its dashboard API
-    // returns the current `revision` for a dashboard id, which is the only number
-    // that ever moves -- so a dashboard is modelled as a package whose version is
-    // its revision.
-    "grafana-dashboards": {
-      defaultRegistryUrlTemplate: "https://grafana.com/api/dashboards/{{packageName}}",
-      format: "json",
-      transformTemplates: [
-        '{"releases": [{"version": $string(revision)}], "homepage": "https://grafana.com/grafana/dashboards/" & $string(id)}',
-      ],
-    },
   },
-  // Three things in this repository pin a version that no built-in manager can
+  // Two things in this repository pin a version that no built-in manager can
   // see. Each was drifting silently before these existed.
   customManagers: [
     {
@@ -53,57 +42,6 @@
         "imageName: (?<depName>\\S+):(?<currentValue>\\S+)"
       ],
       datasourceTemplate: "docker",
-    },
-    {
-      // Dashboards the chart downloads from grafana.com at pod start. depName
-      // comes from the trailing comment that is already on every gnetId line.
-      customType: "regex",
-      description: "Grafana dashboards pinned by gnetId and revision",
-      managerFilePatterns: [
-        "/^kubernetes/.+\\.ya?ml$/"
-      ],
-      matchStrings: [
-        "gnetId: (?<packageName>\\d+) # (?<depName>.+)\n(?<indentation>\\s+)revision: (?<currentValue>\\d+)"
-      ],
-      autoReplaceStringTemplate: "gnetId: {{{packageName}}} # {{{depName}}}\n{{{indentation}}}revision: {{{newValue}}}",
-      datasourceTemplate: "custom.grafana-dashboards",
-      versioningTemplate: "regex:^(?<major>\\d+)$",
-    },
-    {
-      // Dashboards fetched straight from a git tag. Pinning the tag stops them
-      // drifting, which was the point, but nothing was moving the pin either:
-      // the envoy dashboards trailed the gateway chart by a minor release and
-      // the flux ones by three.
-      //
-      // The trailing path is matched but NOT captured, and there is deliberately
-      // no autoReplaceStringTemplate. Both of those are the same bug:
-      //
-      //   - Only the fields in Renovate's `validMatchFields` (depName,
-      //     packageName, currentValue, currentDigest, datasource, versioning,
-      //     extractVersion, registryUrl, depType, indentation) are copied onto
-      //     the dependency. A group named anything else -- `path` -- is matched
-      //     and then dropped.
-      //   - doAutoReplace compiles autoReplaceStringTemplate against that
-      //     dependency, so `{{{path}}}` rendered empty and rewrote
-      //     .../gateway/v1.8.2/charts/.../envoy-gateway-global.json down to
-      //     .../gateway/v1.9.1/ -- which this regex can no longer match, so
-      //     Renovate failed to confirm the update and errored the branch with
-      //     "Error updating branch: update failure". Three groups sat broken
-      //     that way: envoy-gateway, major-flux-operator, major-blocky.
-      //
-      // With no template, Renovate replaces currentValue inside the matched
-      // string and the path survives untouched. Matching the path still matters
-      // -- it is what makes each of the three envoy URLs a distinct
-      // replaceString rather than three identical ones.
-      customType: "regex",
-      description: "Grafana dashboards fetched from a tagged GitHub source",
-      managerFilePatterns: [
-        "/^kubernetes/.+\\.ya?ml$/"
-      ],
-      matchStrings: [
-        "https://raw\\.githubusercontent\\.com/(?<depName>[^/]+/[^/]+)/(?<currentValue>v\\d[^/]*)/\\S+"
-      ],
-      datasourceTemplate: "github-releases",
     },
     {
       // Trilium drives the Claude Code CLI as a subprocess and an init container
@@ -176,11 +114,8 @@
     {
       description: "Flux Operator Group",
       groupName: "flux-operator",
-      // github-releases so the two flux dashboards pinned to a tag ride along
-      // with the operator release they came from.
       matchDatasources: [
-        "docker",
-        "github-releases"
+        "docker"
       ],
       matchPackageNames: [
         "/flux-operator/",
@@ -257,64 +192,6 @@
       prBodyNotes: [
         "⚠️ A VectorChord bump needs `ALTER EXTENSION vchord UPDATE` after the rolling restart; a PostgreSQL major needs a real CNPG major upgrade, not an image swap.",
       ],
-    },
-    {
-      description: "Grafana dashboards",
-      matchDatasources: [
-        "custom.grafana-dashboards"
-      ],
-      semanticCommitType: "chore",
-      semanticCommitScope: "grafana-dashboards",
-      commitMessageTopic: "dashboard {{depName}}",
-      addLabels: [
-        "renovate/grafana-dashboard"
-      ],
-    },
-    {
-      // The tagged-source dashboards, which are a GitHub release rather than a
-      // grafana.com revision. They keep the label but not a topic of their own:
-      // the rules below fold each one into the PR for the app it describes, so
-      // a dashboard and the app it charts can no longer drift apart.
-      description: "Grafana dashboards from a tagged GitHub source",
-      matchDatasources: [
-        "github-releases"
-      ],
-      matchFileNames: [
-        "**/kube-prometheus-stack/**"
-      ],
-      addLabels: [
-        "renovate/grafana-dashboard"
-      ],
-    },
-    {
-      description: "Blocky, with its dashboard",
-      groupName: "blocky",
-      matchDatasources: [
-        "docker",
-        "github-releases"
-      ],
-      matchPackageNames: [
-        "ghcr.io/0xerr0r/blocky",
-        "0xERR0R/blocky"
-      ],
-      group: {
-        commitMessageTopic: "{{{groupName}}} group",
-      },
-    },
-    {
-      description: "Envoy Gateway, with its dashboards",
-      groupName: "envoy-gateway",
-      matchDatasources: [
-        "docker",
-        "github-releases"
-      ],
-      matchPackageNames: [
-        "mirror.gcr.io/envoyproxy/gateway-helm",
-        "envoyproxy/gateway"
-      ],
-      group: {
-        commitMessageTopic: "{{{groupName}}} group",
-      },
     },
     {
       matchUpdateTypes: [

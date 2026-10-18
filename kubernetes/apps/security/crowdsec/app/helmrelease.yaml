@@ -175,7 +175,7 @@ spec:
           # above: those are broken for every modern app, this one is only
           # wrong for the file-sync host. Every other published app keeps method
           # enforcement, which is worth having -- an unexpected PUT or DELETE
-          # against Vaultwarden or Grafana is still a single-strike block.
+          # against any of them is still a single-strike block.
           #
           # There is no hub collection for OxiCloud or Collabora. The Nextcloud
           # CRS exclusion plugin was considered and rejected: it keys on

@@ -124,11 +124,3 @@ spec:
       enabled: true
       serviceMonitor:
         enabled: true
-      dashboard:
-        enabled: true
-        labels:
-          grafana_dashboard: "1"
-        # Grafana comes from kube-prometheus-stack, not grafana-operator, so the
-        # sidecar picks the ConfigMap up by label and the CR is unused.
-        grafanaDashboard:
-          enabled: false

@@ -1,0 +1,33 @@
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDOIDCClient
+metadata:
+  name: perses
+spec:
+  callbackUrls:
+    - https://perses.${SECRET_DOMAIN}/api/auth/providers/oidc/pocket-id/callback
+  # Perses builds the post-logout target from X-Forwarded-Host/Proto with the
+  # API prefix as its path, which is empty here: no trailing slash.
+  logoutCallbackUrls:
+    - https://perses.${SECRET_DOMAIN}
+  pkceEnabled: true
+  skipConsent: true
+  # The real gate. Every identity that completes the callback gets the guest
+  # permissions in helmrelease.yaml, which are everything, so who may log in is
+  # decided here and nowhere else.
+  allowedUserGroups:
+    - name: perses-users
+  secret:
+    name: perses-oidc
+    # The chart reads each PERSES_* env var from one Secret under the
+    # kebab-cased variable name, so the keys are named to match it.
+    keys:
+      clientID: perses-security-authentication-providers-oidc-0-client-id
+      clientSecret: perses-security-authentication-providers-oidc-0-client-secret
+---
+apiVersion: pocketid.internal/v1alpha1
+kind: PocketIDUserGroup
+metadata:
+  name: perses-users
+spec:
+  friendlyName: Perses Users

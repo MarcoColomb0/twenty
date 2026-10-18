@@ -14,3 +14,4 @@ resources:
   - ./gatus/ks.yaml
   - ./kromgo/ks.yaml
   - ./ntfy/ks.yaml
+  - ./perses/ks.yaml

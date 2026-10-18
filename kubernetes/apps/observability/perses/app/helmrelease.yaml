@@ -1,0 +1,128 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: perses
+spec:
+  chart:
+    spec:
+      chart: perses
+      version: 0.23.3
+      sourceRef:
+        kind: HelmRepository
+        name: perses
+  interval: 1h
+  values:
+    fullnameOverride: perses
+
+    config:
+      security:
+        enable_auth: true
+        # encryption_key is set by the postRenderer at the bottom: the chart
+        # schema rejects it here.
+        cookie:
+          secure: true
+        authentication:
+          # Sign-up is POST /api/v1/users, registered as an anonymous route
+          # whenever this is false -- native provider or not. OIDC logins
+          # create their user through a separate path, so this only closes the
+          # hole.
+          disable_sign_up: true
+          providers:
+            enable_native: false
+            oidc:
+              # client_id and client_secret come from the perses-oidc Secret
+              # as PERSES_SECURITY_AUTHENTICATION_PROVIDERS_OIDC_0_* env vars,
+              # see secret below.
+              - slug_id: pocket-id
+                name: Pocket ID
+                issuer: https://id.${SECRET_DOMAIN}
+                # Pinned rather than derived from the request, so a forged
+                # Host header cannot steer the code exchange elsewhere.
+                redirect_uri: https://perses.${SECRET_DOMAIN}/api/auth/providers/oidc/pocket-id/callback
+                scopes:
+                  - openid
+                  - profile
+                  - email
+                logout:
+                  enabled: true
+        authorization:
+          # Every logged-in user may do everything. Who can log in at all is
+          # decided by allowedUserGroups on the Pocket ID client.
+          #
+          # Perses names the user after the local part of the email, so two
+          # identities sharing it would share one Perses user -- moot while
+          # the permissions are identical for everyone.
+          #
+          # Perses 0.54 calls this path deprecated in favour of
+          # provider.native.guest_permissions and moves it there itself; the
+          # chart schema only accepts this one.
+          guest_permissions:
+            - actions:
+                - "*"
+              scopes:
+                - "*"
+
+    # The chart's auto-generated env vars for the OIDC client resolve against
+    # this Secret; the PocketIDOIDCClient writes its keys under matching names.
+    secret:
+      create: false
+      name: perses-oidc
+
+    persistence:
+      enabled: true
+      storageClass: longhorn
+      size: 1Gi
+      annotations:
+        # Dashboards are made in the UI and exist only here. Helm would delete
+        # a chart-owned claim on uninstall or reinstall.
+        helm.sh/resource-policy: keep
+        resize.topolvm.io/storage_limit: 5Gi
+        resize.topolvm.io/threshold: 20%
+        resize.topolvm.io/increase: 20%
+      # Pod-level securityContext, despite where the chart puts it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+
+    volumes:
+      - name: provisioning
+        configMap:
+          name: perses-provisioning
+    volumeMounts:
+      - name: provisioning
+        mountPath: /etc/perses/provisioning
+        readOnly: true
+
+    # Renders a helm test pod pulling a third-party image; nothing runs it.
+    testFramework:
+      enabled: false
+
+    resources:
+      requests:
+        cpu: 10m
+      limits:
+        memory: 256Mi
+
+  # The chart's values schema has no encryption_key, so it goes in as an env
+  # var, which Perses maps onto security.encryption_key. Without one it falls
+  # back to a key hardcoded in its own source. The value must be exactly 32
+  # bytes or Perses refuses to start.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: StatefulSet
+              name: perses
+            patch: |-
+              - op: add
+                path: /spec/template/spec/containers/0/env/-
+                value:
+                  name: PERSES_SECURITY_ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: perses-encryption
+                      key: encryption-key

@@ -22,11 +22,3 @@ spec:
 
     serviceMonitor:
       enabled: true
-
-    grafanaDashboard:
-      enabled: true
-      mode: Sidecar
-      # The kube-prometheus-stack sidecar watches all namespaces for this label
-      # and ignores its value.
-      labels:
-        grafana_dashboard: "1"
