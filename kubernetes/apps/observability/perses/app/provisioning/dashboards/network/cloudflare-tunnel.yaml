@@ -1,0 +1,687 @@
+---
+# cloudflared, scraped by its ServiceMonitor (job="cloudflare-tunnel").
+#
+#   - quic_client_* RTTs are in milliseconds; queries divide by 1000 for the
+#     seconds unit.
+#   - cloudflared_tunnel_server_locations is 1 for the current location of a
+#     connection and 0 for where it used to be, hence the == 1.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: cloudflare-tunnel
+  project: network
+spec:
+  display:
+    name: Cloudflare Tunnel
+    description: 'cloudflared: the only way in from the internet. Two replicas, each holding four QUIC connections to Cloudflare''s edge, forwarding to envoy-external.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    haConns:
+      kind: Panel
+      spec:
+        display:
+          name: Edge connections
+          description: Live connections to Cloudflare's edge, four per replica. Under eight means a replica has lost some; at zero the public sites are down.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 4
+                  color: '#ffb300'
+                - value: 8
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cloudflared_tunnel_ha_connections{job="cloudflare-tunnel"})
+    rps:
+      kind: Panel
+      spec:
+        display:
+          name: Requests / s
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 2
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cloudflared_tunnel_total_requests{job="cloudflare-tunnel"}[$__rate_interval]))
+    errRatio:
+      kind: Panel
+      spec:
+        display:
+          name: Origin errors
+          description: Requests cloudflared could not hand to envoy-external at all, over the selected range. Visitors see a Cloudflare 502 for these.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.01
+                  color: '#ffb300'
+                - value: 0.05
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(cloudflared_tunnel_request_errors{job="cloudflare-tunnel"}[$__range])) / sum(increase(cloudflared_tunnel_total_requests{job="cloudflare-tunnel"}[$__range]))
+    rtt:
+      kind: Panel
+      spec:
+        display:
+          name: Edge RTT
+          description: Average smoothed round trip over all edge connections.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.08
+                  color: '#ffb300'
+                - value: 0.2
+                  color: '#e53935'
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: avg(quic_client_smoothed_rtt{job="cloudflare-tunnel"}) / 1000
+    locations:
+      kind: Panel
+      spec:
+        display:
+          name: Edge locations
+          description: Distinct Cloudflare data centres currently holding a connection (mxp = Milan, fco = Rome).
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(count by (edge_location) (cloudflared_tunnel_server_locations{job="cloudflare-tunnel"} == 1))
+    version:
+      kind: Panel
+      spec:
+        display:
+          name: Version
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: version
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (version) (build_info{job="cloudflare-tunnel"})
+    requests:
+      kind: Panel
+      spec:
+        display:
+          name: Requests
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cloudflared_tunnel_total_requests{job="cloudflare-tunnel"}[$__rate_interval]))
+                  seriesNameFormat: requests
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cloudflared_tunnel_request_errors{job="cloudflare-tunnel"}[$__rate_interval]))
+                  seriesNameFormat: origin errors
+    codes:
+      kind: Panel
+      spec:
+        display:
+          name: Responses by status class
+          description: As returned by envoy-external, so CrowdSec's 403s show up as 4xx here.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (class) (label_replace(rate(cloudflared_tunnel_response_by_code{job="cloudflare-tunnel"}[$__rate_interval]), "class", "$1", "status_code", "([0-9]).."))
+                  seriesNameFormat: '{{class}}xx'
+    codeShare:
+      kind: Panel
+      spec:
+        display:
+          name: Status codes
+        plugin:
+          kind: PieChart
+          spec:
+            calculation: last-number
+            mode: percentage
+            format:
+              unit: percent
+              decimalPlaces: 1
+            radius: 70
+            showLabels: false
+            sort: desc
+            legend:
+              position: bottom
+              mode: table
+              values:
+                - relative
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: round(sum by (status_code) (increase(cloudflared_tunnel_response_by_code{job="cloudflare-tunnel"}[$__range]))) > 0
+                  seriesNameFormat: '{{status_code}}'
+    concurrent:
+      kind: Panel
+      spec:
+        display:
+          name: Requests in flight
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(cloudflared_tunnel_concurrent_requests_per_tunnel{job="cloudflare-tunnel"})
+                  seriesNameFormat: in flight
+    bytes:
+      kind: Panel
+      spec:
+        display:
+          name: Edge throughput
+          description: Requests in from Cloudflare above the axis, responses out below.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+            querySettings:
+              - queryIndex: 1
+                negativeY: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(quic_client_receive_bytes{job="cloudflare-tunnel"}[$__rate_interval]))
+                  seriesNameFormat: from edge
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(quic_client_sent_bytes{job="cloudflare-tunnel"}[$__rate_interval]))
+                  seriesNameFormat: to edge
+    rttPerConn:
+      kind: Panel
+      spec:
+        display:
+          name: Smoothed RTT per connection
+          description: One line per QUIC connection. A single connection drifting up is that edge location; all of them is the uplink.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(quic_client_smoothed_rtt{job="cloudflare-tunnel"}, "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)") / 1000
+                  seriesNameFormat: '{{replica}} #{{conn_index}}'
+    byLocation:
+      kind: Panel
+      spec:
+        display:
+          name: Connections by edge location
+        plugin:
+          kind: BarChart
+          spec:
+            calculation: last-number
+            orientation: horizontal
+            sort: desc
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count by (edge_location) (cloudflared_tunnel_server_locations{job="cloudflare-tunnel"} == 1)
+                  seriesNameFormat: '{{edge_location}}'
+    haPerReplica:
+      kind: Panel
+      spec:
+        display:
+          name: Connections per replica
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(cloudflared_tunnel_ha_connections{job="cloudflare-tunnel"}, "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    loss:
+      kind: Panel
+      spec:
+        display:
+          name: QUIC packet loss
+          description: Packets declared lost on the edge connections. Sustained loss here is the DSL line, not Cloudflare.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: packets/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (reason) (rate(quic_client_lost_packets{job="cloudflare-tunnel"}[$__rate_interval]))
+                  seriesNameFormat: '{{reason}}'
+    perReplica:
+      kind: Panel
+      spec:
+        display:
+          name: Throughput per replica
+          description: Cloudflare spreads visitors over both replicas' connections; one flat at zero is a replica it has stopped using.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(quic_client_receive_bytes{job="cloudflare-tunnel"}[$__rate_interval])), "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)")
+                  seriesNameFormat: in {{replica}}
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(quic_client_sent_bytes{job="cloudflare-tunnel"}[$__rate_interval])), "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)")
+                  seriesNameFormat: out {{replica}}
+    churn:
+      kind: Panel
+      spec:
+        display:
+          name: Connection churn
+          description: Registrations and closes per interval. Bursts mean the tunnel reconnected -- an edge maintenance, a replica restart or a flapping line.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (method) (increase(cloudflared_rpc_client_operations{job="cloudflare-tunnel"}[$__rate_interval])) > 0
+                  seriesNameFormat: '{{method}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(quic_client_closed_connections{job="cloudflare-tunnel"}[$__rate_interval])) > 0
+                  seriesNameFormat: closed
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 3
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="network", pod=~"cloudflare-tunnel-.*", container!=""}[$__rate_interval])), "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    memory:
+      kind: Panel
+      spec:
+        display:
+          name: Memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (container_memory_working_set_bytes{namespace="network", pod=~"cloudflare-tunnel-.*", container!=""}), "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    restarts:
+      kind: Panel
+      spec:
+        display:
+          name: Restarts
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace="network", pod=~"cloudflare-tunnel-.*"}[$__rate_interval])), "replica", "$1", "pod", "cloudflare-tunnel-[0-9a-f]+-(.+)") > 0
+                  seriesNameFormat: '{{replica}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/haConns'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/rps'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/errRatio'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/rtt'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/locations'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/version'
+    - kind: Grid
+      spec:
+        display:
+          title: Traffic
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/requests'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/codes'
+          - x: 0
+            "y": 8
+            width: 8
+            height: 9
+            content:
+              $ref: '#/spec/panels/codeShare'
+          - x: 8
+            "y": 8
+            width: 8
+            height: 9
+            content:
+              $ref: '#/spec/panels/concurrent'
+          - x: 16
+            "y": 8
+            width: 8
+            height: 9
+            content:
+              $ref: '#/spec/panels/bytes'
+    - kind: Grid
+      spec:
+        display:
+          title: Edge connections
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/rttPerConn'
+          - x: 12
+            "y": 0
+            width: 6
+            height: 8
+            content:
+              $ref: '#/spec/panels/byLocation'
+          - x: 18
+            "y": 0
+            width: 6
+            height: 8
+            content:
+              $ref: '#/spec/panels/haPerReplica'
+          - x: 0
+            "y": 8
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/loss'
+          - x: 8
+            "y": 8
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/perReplica'
+          - x: 16
+            "y": 8
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/churn'
+    - kind: Grid
+      spec:
+        display:
+          title: Resources
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/memory'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/restarts'
+  links:
+    - name: cloudflared metrics
+      url: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/monitor-tunnels/metrics/
+      targetBlank: true

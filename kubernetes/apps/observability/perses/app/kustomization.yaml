@@ -24,6 +24,11 @@ configMapGenerator:
       - globaldatasources.yaml=provisioning/globaldatasources.yaml
       - projects.yaml=provisioning/projects.yaml
       - network-blocky.yaml=provisioning/dashboards/network/blocky.yaml
+      - network-cloudflare-tunnel.yaml=provisioning/dashboards/network/cloudflare-tunnel.yaml
+      - network-gateways.yaml=provisioning/dashboards/network/gateways.yaml
+      - network-internet.yaml=provisioning/dashboards/network/internet.yaml
+      - network-split-dns.yaml=provisioning/dashboards/network/split-dns.yaml
+      - network-tailscale.yaml=provisioning/dashboards/network/tailscale.yaml
     options:
       # The HelmRelease mounts this by name.
       disableNameSuffixHash: true

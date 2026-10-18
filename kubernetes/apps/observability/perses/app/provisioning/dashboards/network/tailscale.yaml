@@ -1,0 +1,505 @@
+---
+# Tailscale subnet router (Connector "home"), scraped by the operator-made ServiceMonitor (job="ts_connector_home").
+#
+#   - tailscaled exports byte counters per path but no per-peer data, so this is
+#     the router's view of the tailnet, not a device list.
+#   - Home DERP region IDs are mapped to city names for the European regions and
+#     the two US ones a fallback is likely to pick; anything else shows its ID.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: tailscale
+  project: network
+spec:
+  display:
+    name: Tailscale
+    description: 'The subnet router that puts 192.168.100.0/24 on the tailnet: two connector replicas, and the path remote devices reach the cluster by.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    routers:
+      kind: Panel
+      spec:
+        display:
+          name: Routers up
+          description: Connector replicas Prometheus can reach. Tailnet DNS points at blocky through these, so at zero remote devices lose name resolution entirely, not just the cluster.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 2
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(up{job="ts_connector_home"})
+    routesOk:
+      kind: Panel
+      spec:
+        display:
+          name: Routes approved
+          description: Approved over advertised subnet routes. Below 100% means a replica advertises the subnet but autoApprovers did not take it.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: min(tailscaled_approved_routes{job="ts_connector_home"}) / max(tailscaled_advertised_routes{job="ts_connector_home"})
+    health:
+      kind: Panel
+      spec:
+        display:
+          name: Health warnings
+          description: Warnings tailscaled raises about itself -- no DERP connection, clock skew, firewall trouble. `tailscale status` on the pod says which.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(tailscaled_health_messages{job="ts_connector_home"})
+    derp:
+      kind: Panel
+      spec:
+        display:
+          name: Home DERP
+          description: The relay region tailscaled picked as closest. Traffic falls back to it when a direct connection cannot be made.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            mappings:
+              - kind: Value
+                spec:
+                  value: "1"
+                  result:
+                    value: New York
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "2"
+                  result:
+                    value: San Francisco
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "4"
+                  result:
+                    value: Frankfurt
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "8"
+                  result:
+                    value: London
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "14"
+                  result:
+                    value: Amsterdam
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "18"
+                  result:
+                    value: Paris
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "19"
+                  result:
+                    value: Madrid
+                    color: '#1e88e5'
+              - kind: Value
+                spec:
+                  value: "22"
+                  result:
+                    value: Warsaw
+                    color: '#1e88e5'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(tailscaled_home_derp_region_id{job="ts_connector_home"})
+    inRate:
+      kind: Panel
+      spec:
+        display:
+          name: Received
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: bytes/sec
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(tailscaled_inbound_bytes_total{job="ts_connector_home"}[$__rate_interval]))
+    directShare:
+      kind: Panel
+      spec:
+        display:
+          name: Direct
+          description: Share of received bytes that came peer-to-peer rather than through a DERP or peer relay. Empty when nothing was received.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#ffb300'
+              steps:
+                - value: 0.8
+                  color: '#43a047'
+            mappings:
+              - kind: Misc
+                spec:
+                  value: NaN
+                  result:
+                    value: no traffic
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(tailscaled_inbound_bytes_total{job="ts_connector_home", path=~"direct_.*"}[$__range])) / sum(increase(tailscaled_inbound_bytes_total{job="ts_connector_home"}[$__range]))
+    inByPath:
+      kind: Panel
+      spec:
+        display:
+          name: Received by path
+          description: direct_* is peer-to-peer, derp is relayed through Tailscale's servers, peer_relay through another node.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (path) (rate(tailscaled_inbound_bytes_total{job="ts_connector_home"}[$__rate_interval]))
+                  seriesNameFormat: '{{path}}'
+    outByPath:
+      kind: Panel
+      spec:
+        display:
+          name: Sent by path
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (path) (rate(tailscaled_outbound_bytes_total{job="ts_connector_home"}[$__rate_interval]))
+                  seriesNameFormat: '{{path}}'
+    perRouter:
+      kind: Panel
+      spec:
+        display:
+          name: Throughput per router
+          description: Both replicas advertise the same route; Tailscale sends each client to one of them.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(tailscaled_inbound_bytes_total{job="ts_connector_home"}[$__rate_interval])), "replica", "$1", "pod", "ts-home-[a-z0-9]+-(.+)")
+                  seriesNameFormat: in {{replica}}
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(tailscaled_outbound_bytes_total{job="ts_connector_home"}[$__rate_interval])), "replica", "$1", "pod", "ts-home-[a-z0-9]+-(.+)")
+                  seriesNameFormat: out {{replica}}
+    drops:
+      kind: Panel
+      spec:
+        display:
+          name: Dropped packets
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: packets/s
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (reason) (rate(tailscaled_outbound_dropped_packets_total{job="ts_connector_home"}[$__rate_interval]))
+                  seriesNameFormat: 'out: {{reason}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (reason) (rate(tailscaled_inbound_dropped_packets_total{job="ts_connector_home"}[$__rate_interval]))
+                  seriesNameFormat: 'in: {{reason}}'
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: CPU
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 3
+              label: cores
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="network", pod=~"ts-home-.*", container!=""}[$__rate_interval])), "replica", "$1", "pod", "ts-home-[a-z0-9]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    memory:
+      kind: Panel
+      spec:
+        display:
+          name: Memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (container_memory_working_set_bytes{namespace="network", pod=~"ts-home-.*", container!=""}), "replica", "$1", "pod", "ts-home-[a-z0-9]+-(.+)")
+                  seriesNameFormat: '{{replica}}'
+    restarts:
+      kind: Panel
+      spec:
+        display:
+          name: Restarts
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: label_replace(sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace="network", pod=~"ts-home-.*"}[$__rate_interval])), "replica", "$1", "pod", "ts-home-[a-z0-9]+-(.+)") > 0
+                  seriesNameFormat: '{{replica}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/routers'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/routesOk'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/health'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/derp'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/inRate'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/directShare'
+    - kind: Grid
+      spec:
+        display:
+          title: Traffic
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/inByPath'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/outByPath'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/perRouter'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/drops'
+    - kind: Grid
+      spec:
+        display:
+          title: Resources
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/memory'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 7
+            content:
+              $ref: '#/spec/panels/restarts'
+  links:
+    - name: Tailscale client metrics
+      url: https://tailscale.com/kb/1482/client-metrics
+      targetBlank: true

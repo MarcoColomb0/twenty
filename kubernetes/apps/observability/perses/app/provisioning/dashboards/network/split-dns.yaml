@@ -1,0 +1,608 @@
+---
+# Split DNS: k8s-gateway (CoreDNS, ServiceMonitor job="k8s-gateway-metrics")
+# and external-dns publishing to Cloudflare (job="cloudflare-dns").
+#
+#   - k8s-gateway is reached through blocky's conditional mapping, so its query
+#     rate is blocky's CONDITIONAL rate plus anything asking .103 directly.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: split-dns
+  project: network
+spec:
+  display:
+    name: Split DNS
+    description: 'How the domain resolves: k8s-gateway answers it on the LAN from HTTPRoutes (behind blocky''s conditional mapping), external-dns publishes the public records to Cloudflare.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    gwRps:
+      kind: Panel
+      spec:
+        display:
+          name: Queries / s
+          description: Almost all of these are blocky forwarding the cluster domain; the rest are clients pointed at .103 directly.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 2
+            sparkline: {}
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(coredns_dns_requests_total{job="k8s-gateway-metrics"}[$__rate_interval]))
+    gwNx:
+      kind: Panel
+      spec:
+        display:
+          name: NXDOMAIN
+          description: Names under the domain with no HTTPRoute or Service behind them, over the selected range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(coredns_dns_responses_total{job="k8s-gateway-metrics", rcode="NXDOMAIN"}[$__range])) / sum(increase(coredns_dns_responses_total{job="k8s-gateway-metrics"}[$__range]))
+    gwServfail:
+      kind: Panel
+      spec:
+        display:
+          name: SERVFAIL
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 20
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(coredns_dns_responses_total{job="k8s-gateway-metrics", rcode="SERVFAIL"}[$__range]))
+    gwP95:
+      kind: Panel
+      spec:
+        display:
+          name: p95 latency
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.05
+                  color: '#ffb300'
+                - value: 0.25
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket{job="k8s-gateway-metrics"}[$__range])))
+    gwUp:
+      kind: Panel
+      spec:
+        display:
+          name: Replicas up
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.5
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(up{job="k8s-gateway-metrics"}) / max(kube_deployment_spec_replicas{namespace="network", deployment="k8s-gateway"})
+    gwPanics:
+      kind: Panel
+      spec:
+        display:
+          name: Panics
+          description: CoreDNS recovers from a plugin panic and keeps serving, so this counter is the only trace.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(coredns_panics_total{job="k8s-gateway-metrics"}[$__range])) or vector(0)
+    gwByType:
+      kind: Panel
+      spec:
+        display:
+          name: Queries by type
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: queries/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (type) (rate(coredns_dns_requests_total{job="k8s-gateway-metrics"}[$__rate_interval]))
+                  seriesNameFormat: '{{type}}'
+    gwByRcode:
+      kind: Panel
+      spec:
+        display:
+          name: Responses by code
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: queries/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (rcode) (rate(coredns_dns_responses_total{job="k8s-gateway-metrics"}[$__rate_interval]))
+                  seriesNameFormat: '{{rcode}}'
+    gwLatency:
+      kind: Panel
+      spec:
+        display:
+          name: Latency
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.5, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket{job="k8s-gateway-metrics"}[$__rate_interval])))
+                  seriesNameFormat: p50
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.99, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket{job="k8s-gateway-metrics"}[$__rate_interval])))
+                  seriesNameFormat: p99
+    edRecords:
+      kind: Panel
+      spec:
+        display:
+          name: Records in Cloudflare
+          description: Every record external-dns sees in the zone it owns, ownership TXT records included.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(external_dns_registry_records{job="cloudflare-dns"})
+    edSource:
+      kind: Panel
+      spec:
+        display:
+          name: Desired records
+          description: 'Records the cluster asks for: one per published HTTPRoute hostname plus DNSEndpoints.'
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(external_dns_source_records{job="cloudflare-dns"})
+    edVerified:
+      kind: Panel
+      spec:
+        display:
+          name: In sync
+          description: Desired records that exist in Cloudflare as asked. Below 100% means something is waiting to be created or was refused.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 0.95
+                  color: '#ffb300'
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(external_dns_controller_verified_records{job="cloudflare-dns"}) / sum(external_dns_source_records{job="cloudflare-dns"})
+    edSyncAge:
+      kind: Panel
+      spec:
+        display:
+          name: Last successful sync
+          description: Age of the last reconcile that reached Cloudflare successfully.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 600
+                  color: '#ffb300'
+                - value: 3600
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: time() - max(external_dns_controller_last_sync_timestamp_seconds{job="cloudflare-dns"})
+    edSoftErr:
+      kind: Panel
+      spec:
+        display:
+          name: Consecutive soft errors
+          description: Reconcile loops in a row that failed without crashing -- the Cloudflare API refusing or rate-limiting.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 5
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(external_dns_controller_consecutive_soft_errors{job="cloudflare-dns"})
+    edVersion:
+      kind: Panel
+      spec:
+        display:
+          name: Version
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last
+            metricLabel: version
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (version) (external_dns_build_info{job="cloudflare-dns"})
+    edByType:
+      kind: Panel
+      spec:
+        display:
+          name: Records by type
+          description: TXT includes the ownership records external-dns writes next to each one it manages.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (record_type) (external_dns_registry_records{job="cloudflare-dns"})
+                  seriesNameFormat: '{{record_type}}'
+    edChanges:
+      kind: Panel
+      spec:
+        display:
+          name: Changes pushed to Cloudflare
+          description: 'Batches of record changes sent to Cloudflare. A quiet panel is normal: nothing changes unless a route does.'
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+            querySettings:
+              - queryIndex: 1
+                colorMode: fixed-single
+                colorValue: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(external_dns_webhook_provider_applychanges_requests_total{job="cloudflare-dns"}[$__rate_interval])) > 0
+                  seriesNameFormat: apply requests
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(external_dns_webhook_provider_applychanges_errors_total{job="cloudflare-dns"}[$__rate_interval])) > 0
+                  seriesNameFormat: apply errors
+    edErrors:
+      kind: Panel
+      spec:
+        display:
+          name: Errors
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+            visual:
+              display: bar
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(external_dns_source_errors_total{job="cloudflare-dns"}[$__rate_interval]))
+                  seriesNameFormat: reading the cluster
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(external_dns_registry_errors_total{job="cloudflare-dns"}[$__rate_interval]))
+                  seriesNameFormat: reading Cloudflare
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(external_dns_webhook_provider_records_errors_total{job="cloudflare-dns"}[$__rate_interval]))
+                  seriesNameFormat: listing records
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: k8s-gateway (LAN answers)
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/gwRps'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/gwNx'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/gwServfail'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/gwP95'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/gwUp'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/gwPanics'
+          - x: 0
+            "y": 4
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gwByType'
+          - x: 8
+            "y": 4
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gwByRcode'
+          - x: 16
+            "y": 4
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/gwLatency'
+    - kind: Grid
+      spec:
+        display:
+          title: external-dns (public records)
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/edRecords'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/edSource'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/edVerified'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/edSyncAge'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/edSoftErr'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/edVersion'
+          - x: 0
+            "y": 4
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/edByType'
+          - x: 8
+            "y": 4
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/edChanges'
+          - x: 16
+            "y": 4
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/edErrors'
