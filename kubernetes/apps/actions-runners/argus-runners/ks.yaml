@@ -1,0 +1,19 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: argus-runners
+spec:
+  dependsOn:
+    # Supplies the AutoscalingRunnerSet CRD and the service account the
+    # listener is created under.
+    - name: arc-controller
+  interval: 1h
+  path: ./kubernetes/apps/actions-runners/argus-runners/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: actions-runners
+  wait: false

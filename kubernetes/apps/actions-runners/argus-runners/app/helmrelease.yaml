@@ -1,0 +1,142 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: argus-runners
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: argus-runners
+  interval: 1h
+  values:
+    # Self-hosted runners for the private Argus repo, which had used up the
+    # account's GitHub-hosted minutes. Workflows select these with
+    # `runs-on: argus-runners`. Never point a public repo at them: a fork's
+    # pull request runs its own workflow code, and these pods are privileged.
+    githubConfigUrl: https://github.com/MarcoColomb0/argus
+    # GitHub App credentials: github_app_id, github_app_installation_id and
+    # github_app_private_key. The App needs Administration read/write on the
+    # Argus repository to register runners, and nothing else.
+    githubConfigSecret: argus-runners-github-app
+    runnerScaleSetName: argus-runners
+    # Zero idle pods: a runner exists only while a job does, and is deleted
+    # after it. The cap bounds the burst to what the nodes can take.
+    minRunners: 0
+    maxRunners: 3
+    controllerServiceAccount:
+      namespace: actions-runners
+      name: arc-controller
+
+    # Docker-in-docker, written out rather than containerMode: dind so the
+    # images are pinned and the containers have resources. Argus's CI needs a
+    # Docker daemon twice over: `services:` (Postgres) and docker/build-push.
+    # The nodes are x86, so linux/amd64 builds run natively.
+    template:
+      spec:
+        initContainers:
+          - name: init-dind-externals
+            image: ghcr.io/actions/actions-runner:2.338.0
+            command:
+              - "cp"
+              - "-r"
+              - "/home/runner/externals/."
+              - "/home/runner/tmpDir/"
+            volumeMounts:
+              - name: dind-externals
+                mountPath: /home/runner/tmpDir
+          # A native sidecar: started before the runner, stopped after it.
+          - name: dind
+            image: docker.io/library/docker:29.9.1-dind
+            args:
+              - dockerd
+              - --host=unix:///var/run/docker.sock
+              - --group=$(DOCKER_GROUP_GID)
+              # Docker Hub through the in-cluster pull-through cache
+              # (docker-mirror). Plain HTTP inside the namespace; dockerd falls
+              # back to Docker Hub itself if the mirror is down.
+              - --registry-mirror=http://docker-mirror.actions-runners.svc.cluster.local:5000
+              - --insecure-registry=docker-mirror.actions-runners.svc.cluster.local:5000
+            env:
+              - name: DOCKER_GROUP_GID
+                value: "123"
+            # Privileged is what dockerd needs. Acceptable only because the
+            # code it runs is Argus's own, the pod lives for one job, and
+            # networkpolicy.yaml keeps it off the cluster and the LAN.
+            securityContext:
+              privileged: true
+            restartPolicy: Always
+            startupProbe:
+              exec:
+                command:
+                  - "docker"
+                  - "info"
+              failureThreshold: 24
+              periodSeconds: 5
+            # Memory request set below the limit on purpose, as for CNPG: a
+            # request equal to a 3Gi limit would reserve 3Gi per idle-ish job
+            # on nodes whose memory is already 80%+ reserved, and a build that
+            # spikes past the request is the expected case, not an outage.
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                memory: 3Gi
+            volumeMounts:
+              - name: work
+                mountPath: /home/runner/_work
+              - name: dind-sock
+                mountPath: /var/run
+              - name: dind-externals
+                mountPath: /home/runner/externals
+        containers:
+          - name: runner
+            image: ghcr.io/actions/actions-runner:2.338.0
+            command:
+              - "/home/runner/run.sh"
+            env:
+              - name: DOCKER_HOST
+                value: unix:///var/run/docker.sock
+              - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+                value: "120"
+              # Package and tool caches on the shared volume (cache-pvc.yaml),
+              # so a fresh runner pod does not re-download everything over the
+              # WAN. Workflows must not also use GitHub's cache service
+              # (setup-node cache:, setup-uv enable-cache:): that round-trips
+              # the whole cache over the WAN, upload included.
+              - name: RUNNER_TOOL_CACHE
+                value: /opt/cache/toolcache
+              - name: AGENT_TOOLSDIRECTORY
+                value: /opt/cache/toolcache
+              - name: npm_config_store_dir
+                value: /opt/cache/pnpm-store
+              - name: UV_CACHE_DIR
+                value: /opt/cache/uv
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                memory: 2Gi
+            volumeMounts:
+              - name: work
+                mountPath: /home/runner/_work
+              - name: dind-sock
+                mountPath: /var/run
+              - name: cache
+                mountPath: /opt/cache
+        # The runner image runs as uid 1001; fsGroup 123 is its docker group,
+        # which owns the shared cache volume so every runner can write to it.
+        securityContext:
+          fsGroup: 123
+          fsGroupChangePolicy: OnRootMismatch
+        volumes:
+          - name: work
+            emptyDir: {}
+          - name: dind-sock
+            emptyDir: {}
+          - name: dind-externals
+            emptyDir: {}
+          - name: cache
+            persistentVolumeClaim:
+              claimName: argus-runners-cache

@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docker-mirror
+  annotations:
+    resize.topolvm.io/storage_limit: 60Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  # Re-downloadable by definition, so no VolSync. Losing it costs one cold
+  # pull of each image over the WAN.
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
