@@ -1,0 +1,52 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: argus-runners
+spec:
+  # Runner pods, and every container dind starts inside them (their traffic
+  # leaves through the pod's IP). They need GitHub, registries, npm and PyPI
+  # -- the internet -- and nothing on the cluster or the LAN. A job that went
+  # wrong should not be able to reach Postgres, the Kubernetes API, rustfs or
+  # the router.
+  #
+  # component: runner matters. The listener pod carries the same scale-set-name
+  # label and must reach the Kubernetes API to scale runners; selecting on the
+  # name alone would cut it off and no runner would ever start.
+  podSelector:
+    matchLabels:
+      actions.github.com/scale-set-name: argus-runners
+      app.kubernetes.io/component: runner
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    # The Docker Hub pull-through cache in this namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: docker-mirror
+      ports:
+        - protocol: TCP
+          port: 5000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10

@@ -1,0 +1,19 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: argus-runners-cache
+  annotations:
+    resize.topolvm.io/storage_limit: 40Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  # ReadWriteMany: up to maxRunners pods mount it at once. Longhorn serves it
+  # over NFS from a share-manager pod. pnpm's store and uv's cache are safe
+  # for concurrent writers. Disposable, so no VolSync.
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 15Gi
