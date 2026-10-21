@@ -99,15 +99,18 @@ spec:
                 value: unix:///var/run/docker.sock
               - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
                 value: "120"
-              # Package and tool caches on the shared volume (cache-pvc.yaml),
-              # so a fresh runner pod does not re-download everything over the
-              # WAN. Workflows must not also use GitHub's cache service
-              # (setup-node cache:, setup-uv enable-cache:): that round-trips
-              # the whole cache over the WAN, upload included.
-              - name: RUNNER_TOOL_CACHE
-                value: /opt/cache/toolcache
-              - name: AGENT_TOOLSDIRECTORY
-                value: /opt/cache/toolcache
+              # Package caches on the shared volume (cache-pvc.yaml), so a fresh
+              # runner pod does not re-download every dependency over the WAN.
+              # Workflows must not also use GitHub's cache service (setup-node
+              # cache:, setup-uv enable-cache:): that round-trips the whole
+              # cache over the WAN, upload included.
+              #
+              # The tool cache (setup-node's Node, setup-uv's uv) stays in the
+              # pod. Sharing it broke on the first run: three jobs extracting
+              # the same Node release into one NFS directory at once failed
+              # with ESTALE (-116), and a fourth found no node binary. pnpm's
+              # store and uv's cache are built for concurrent writers; the
+              # tool cache is not. Node is ~30MB per job.
               - name: npm_config_store_dir
                 value: /opt/cache/pnpm-store
               - name: UV_CACHE_DIR
