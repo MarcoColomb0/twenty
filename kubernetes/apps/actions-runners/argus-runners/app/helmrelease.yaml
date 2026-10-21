@@ -92,8 +92,15 @@ spec:
         containers:
           - name: runner
             image: ghcr.io/actions/actions-runner:2.338.0
+            # The image ships /home/runner as 0777, world-writable with no
+            # sticky bit. Next.js' SWC refuses to load its native binding from
+            # a cache under such a directory (ERR_SWC_NATIVE_CACHE), which
+            # failed Argus' web build. 0755 is what a normal home looks like;
+            # the runner user owns it, so no privilege is needed.
             command:
-              - "/home/runner/run.sh"
+              - sh
+              - -c
+              - chmod 0755 /home/runner && exec /home/runner/run.sh
             env:
               - name: DOCKER_HOST
                 value: unix:///var/run/docker.sock
