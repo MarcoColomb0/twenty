@@ -17,7 +17,7 @@ spec:
           app:
             image:
               repository: ghcr.io/miniflux/miniflux
-              tag: 2.3.3
+              tag: 2.3.4
             env:
               BASE_URL: https://miniflux.${SECRET_DOMAIN}
               LISTEN_ADDR: 0.0.0.0:8080
