@@ -25,7 +25,7 @@ services:
     # caddy image ships no DNS modules, so ACME DNS-01 is impossible with it.
     # Pinned rather than :latest; nothing on this host watches for updates the
     # way Renovate does for the cluster.
-    image: ghcr.io/serfriz/caddy-cloudflare:2.11.4
+    image: ghcr.io/serfriz/caddy-cloudflare:2.11.7
     restart: unless-stopped
     depends_on:
       - ollama
