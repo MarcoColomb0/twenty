@@ -46,7 +46,7 @@ spec:
                 mountPath: /home/runner/tmpDir
           # A native sidecar: started before the runner, stopped after it.
           - name: dind
-            image: docker.io/library/docker:29.9.1-dind
+            image: docker.io/library/docker:29.9.2-dind
             args:
               - dockerd
               - --host=unix:///var/run/docker.sock
