@@ -123,12 +123,8 @@ spec:
               # keep these the same as the scraper's below.
               # 09:00 to midnight, Europe/Rome (TZ above): no scraping overnight.
               SCRAPE_WINDOW: "9-24"
-              # TEMPORARY until 2026-11-01 (back to 45/400/4, 15-40s, 300s): x4 caps and /4
-              # delays cancel the post-block ramp, which holds the scraper at 25% of everything
-              # after two blocks in 14 days and gives back 10% per clean day. Left in place once the
-              # ramp has climbed back, this runs at four times the old pace.
-              SCRAPE_HOURLY_CAP: "180"
-              SCRAPE_DAILY_CAP: "1600"
+              SCRAPE_HOURLY_CAP: "45"
+              SCRAPE_DAILY_CAP: "400"
               SCRAPE_WINDOW_JITTER_M: "0"
             envFrom: &worker-envfrom
               - secretRef:
@@ -163,16 +159,12 @@ spec:
               SCRAPE_WINDOW_JITTER_M: "0"
               # ~2 pages/min; searches spaced out and capped (a burst of ~4/min with 10 searches
               # got an interactive challenge on 2026-10-07).
-              # TEMPORARY until 2026-11-01 (back to 45/400/4, 15-40s, 300s): x4 caps and /4
-              # delays cancel the post-block ramp, which holds the scraper at 25% of everything
-              # after two blocks in 14 days and gives back 10% per clean day. Left in place once the
-              # ramp has climbed back, this runs at four times the old pace.
-              SCRAPE_HOURLY_CAP: "180"
-              SCRAPE_DAILY_CAP: "1600"
-              SCRAPE_DELAY_MIN: "4"
-              SCRAPE_DELAY_MAX: "10"
-              SCRAPE_SEARCH_MIN_GAP_S: "75"
-              SCRAPE_SEARCH_HOURLY_CAP: "16"
+              SCRAPE_HOURLY_CAP: "45"
+              SCRAPE_DAILY_CAP: "400"
+              SCRAPE_DELAY_MIN: "15"
+              SCRAPE_DELAY_MAX: "40"
+              SCRAPE_SEARCH_MIN_GAP_S: "300"
+              SCRAPE_SEARCH_HOURLY_CAP: "4"
               SCRAPE_RATE_LIMIT_COOLDOWN_M: "60"
               SCRAPE_BLOCK_COOLDOWN_H: "12"
               SCRAPE_BLOCK_COOLDOWN_MAX_H: "168"
