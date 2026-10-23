@@ -3,11 +3,33 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: immich
+  labels:
+    # Out of the cluster-wide upgrade policy in flux/cluster/ks.yaml, which
+    # rolls back a failed upgrade. Immich migrates its database on start and
+    # cannot run an older version against it ("Downgrades are not
+    # supported"), so a rollback never recovers anything: on 2026-10-22 the
+    # v3.3.5 upgrade outran Helm's default 5m timeout mid-migration, Flux
+    # rolled back to v3.3.3, and v3.3.3 crash-looped against the migrated
+    # schema for 36 hours.
+    upgrade-rollback: disabled
 spec:
   chartRef:
     kind: OCIRepository
     name: immich
   interval: 1h
+  # Longer than the slowest startup probe below (15s + 60 x 10s): Helm must
+  # not declare failure while the pod is still allowed to be migrating.
+  timeout: 15m
+  install:
+    crds: CreateReplace
+    strategy:
+      name: RetryOnFailure
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    # Retry the same upgrade, never roll back.
+    strategy:
+      name: RetryOnFailure
   values:
     controllers:
       immich:
