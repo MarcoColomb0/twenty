@@ -121,7 +121,8 @@ spec:
               APP_URL: https://argus.${SECRET_DOMAIN}
               # The scheduler queues the scrape when the window opens and reports caps/backlog:
               # keep these the same as the scraper's below.
-              SCRAPE_WINDOW: "0-24"
+              # 09:00 to midnight, Europe/Rome (TZ above): no scraping overnight.
+              SCRAPE_WINDOW: "9-24"
               # TEMPORARY until 2026-11-01 (back to 45/400/4, 15-40s, 300s): x4 caps and /4
               # delays cancel the post-block ramp, which holds the scraper at 25% of everything
               # after two blocks in 14 days and gives back 10% per clean day. Left in place once the
@@ -157,7 +158,8 @@ spec:
               APP_URL: https://argus.${SECRET_DOMAIN}
               # Person-browsing pace (see apps/worker/argus_worker/scraper/pacing.py). A big import is
               # priced over days, most valuable first; raise caps slowly, never in a hurry.
-              SCRAPE_WINDOW: "0-24"
+              # 09:00 to midnight, Europe/Rome (TZ above): no scraping overnight.
+              SCRAPE_WINDOW: "9-24"
               SCRAPE_WINDOW_JITTER_M: "0"
               # ~2 pages/min; searches spaced out and capped (a burst of ~4/min with 10 searches
               # got an interactive challenge on 2026-10-07).
