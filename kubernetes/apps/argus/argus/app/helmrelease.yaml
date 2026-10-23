@@ -119,10 +119,15 @@ spec:
               DATABASE_URL: *db-url
               TZ: Europe/Rome
               APP_URL: https://argus.${SECRET_DOMAIN}
-              # The scheduler queues the scrape when the window opens and reports caps/backlog.
+              # The scheduler queues the scrape when the window opens and reports caps/backlog:
+              # keep these the same as the scraper's below.
               SCRAPE_WINDOW: "0-24"
-              SCRAPE_HOURLY_CAP: "45"
-              SCRAPE_DAILY_CAP: "400"
+              # TEMPORARY until 2026-11-01 (back to 45/400/4, 15-40s, 300s): x4 caps and /4
+              # delays cancel the post-block ramp, which holds the scraper at 25% of everything
+              # after two blocks in 14 days and gives back 10% per clean day. Left in place once the
+              # ramp has climbed back, this runs at four times the old pace.
+              SCRAPE_HOURLY_CAP: "180"
+              SCRAPE_DAILY_CAP: "1600"
               SCRAPE_WINDOW_JITTER_M: "0"
             envFrom: &worker-envfrom
               - secretRef:
@@ -153,20 +158,28 @@ spec:
               # Person-browsing pace (see apps/worker/argus_worker/scraper/pacing.py). A big import is
               # priced over days, most valuable first; raise caps slowly, never in a hurry.
               SCRAPE_WINDOW: "0-24"
-              SCRAPE_HOURLY_CAP: "45"
-              SCRAPE_DAILY_CAP: "400"
               SCRAPE_WINDOW_JITTER_M: "0"
               # ~2 pages/min; searches spaced out and capped (a burst of ~4/min with 10 searches
               # got an interactive challenge on 2026-10-07).
-              SCRAPE_DELAY_MIN: "15"
-              SCRAPE_DELAY_MAX: "40"
-              SCRAPE_SEARCH_MIN_GAP_S: "300"
-              SCRAPE_SEARCH_HOURLY_CAP: "4"
+              # TEMPORARY until 2026-11-01 (back to 45/400/4, 15-40s, 300s): x4 caps and /4
+              # delays cancel the post-block ramp, which holds the scraper at 25% of everything
+              # after two blocks in 14 days and gives back 10% per clean day. Left in place once the
+              # ramp has climbed back, this runs at four times the old pace.
+              SCRAPE_HOURLY_CAP: "180"
+              SCRAPE_DAILY_CAP: "1600"
+              SCRAPE_DELAY_MIN: "4"
+              SCRAPE_DELAY_MAX: "10"
+              SCRAPE_SEARCH_MIN_GAP_S: "75"
+              SCRAPE_SEARCH_HOURLY_CAP: "16"
               SCRAPE_RATE_LIMIT_COOLDOWN_M: "60"
               SCRAPE_BLOCK_COOLDOWN_H: "12"
               SCRAPE_BLOCK_COOLDOWN_MAX_H: "168"
               # Headed on Xvfb (hexium: headless is still detectable on some sites).
               SCRAPE_HEADLESS: "0"
+              # A Cloudflare check that does not clear by itself stays open this long: admins get a
+              # push and solve it with "Take control" on /admin (VNC over /vnc, see the remote
+              # service and route below). Unsolved, it counts as a block.
+              SCRAPE_HUMAN_WAIT_M: "15"
               # If `argus-worker browser-check` reports a software WebGL renderer (llvmpipe or
               # SwiftShader), route WebGL through the iGPU via Vulkan:
               # SCRAPE_CHROME_ARGS: "--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
@@ -236,6 +249,14 @@ spec:
         ports:
           http:
             port: *web-port
+      # The scraper's remote control: a WebSocket bridge to VNC on its browser display (Argus
+      # v0.11.0). The deploy job only bumps image tags, so this and the /vnc route below were
+      # missing and "Take control" hung on "loading browser".
+      remote:
+        controller: scraper
+        ports:
+          http:
+            port: &remote-port 5800
 
     route:
       app:
@@ -253,6 +274,15 @@ spec:
             namespace: network
             sectionName: https
         rules:
+          # The scraper accepts only a one-minute token the web app mints for admins, and runs
+          # VNC only while someone is connected.
+          - matches:
+              - path:
+                  type: PathPrefix
+                  value: /vnc
+            backendRefs:
+              - identifier: remote
+                port: *remote-port
           - backendRefs:
               - identifier: app
                 port: *web-port
