@@ -1,0 +1,81 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: apt-cache
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: apt-cache
+  interval: 1h
+  values:
+    # An apt caching proxy for the CI runners. Argus' e2e job runs
+    # `playwright install --with-deps`, which apt-gets Chromium's system
+    # libraries on every run: ~120MB (package lists plus 85MB of .debs) over
+    # the slow WAN each time. Through this, once.
+    controllers:
+      apt-cache:
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              repository: docker.io/mbentley/apt-cacher-ng
+              tag: trixie-20261023
+            # The image's entrypoint runs as root and also starts cron and
+            # rsyslog; only the daemon is wanted, in the foreground, as its
+            # own user. Its daily cache-expiry cron job is therefore not run;
+            # pvc-autoresizer and the volume's storage_limit bound the growth.
+            command:
+              - "/usr/sbin/apt-cacher-ng"
+            args:
+              - "-c"
+              - "/etc/apt-cacher-ng"
+              - "ForeGround=1"
+            probes:
+              liveness: &probe
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: 3142
+              readiness: *probe
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - "ALL"
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 128Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        # apt-cacher-ng's user and group in the image.
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+    service:
+      app:
+        controller: apt-cache
+        ports:
+          http:
+            port: 3142
+    persistence:
+      cache:
+        existingClaim: apt-cache
+        globalMounts:
+          - path: /var/cache/apt-cacher-ng
+      logs:
+        type: emptyDir
+        globalMounts:
+          - path: /var/log/apt-cacher-ng
+      run:
+        type: emptyDir
+        globalMounts:
+          - path: /run
