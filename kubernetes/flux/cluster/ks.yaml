@@ -49,9 +49,15 @@ spec:
                     remediation:
                       remediateLastFailure: true
                       retries: 2
+              # A HelmRelease labelled upgrade-rollback: disabled opts out
+              # and sets its own install/upgrade policy. For apps whose
+              # schema migrations only go forward, rolling the image back
+              # after a slow upgrade leaves the old version refusing the
+              # migrated database: Immich crash-looped for 36h that way.
               target:
                 group: helm.toolkit.fluxcd.io
                 kind: HelmRelease
+                labelSelector: upgrade-rollback!=disabled
       target:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
