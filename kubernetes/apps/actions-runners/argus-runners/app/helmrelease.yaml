@@ -122,12 +122,17 @@ spec:
                 value: /opt/cache/pnpm-store
               - name: UV_CACHE_DIR
                 value: /opt/cache/uv
+            # Argus' e2e job builds and serves Next.js and drives Chromium
+            # inside this container. At 2Gi the kernel OOM-killed next-build,
+            # Chromium and the runner agent itself together, and GitHub
+            # reported the job as "lost communication with the server". The
+            # container had peaked at 1.9Gi before that.
             resources:
               requests:
                 cpu: 100m
-                memory: 256Mi
+                memory: 512Mi
               limits:
-                memory: 2Gi
+                memory: 4Gi
             volumeMounts:
               - name: work
                 mountPath: /home/runner/_work
