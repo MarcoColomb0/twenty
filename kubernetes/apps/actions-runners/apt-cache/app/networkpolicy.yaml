@@ -1,0 +1,22 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apt-cache
+spec:
+  # An open HTTP proxy for Debian and Ubuntu archives, so only the runners may
+  # use it. Egress is left open: it has to reach the archives.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apt-cache
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              actions.github.com/scale-set-name: argus-runners
+              app.kubernetes.io/component: runner
+      ports:
+        - protocol: TCP
+          port: 3142

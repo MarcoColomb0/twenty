@@ -22,6 +22,14 @@ spec:
     - Egress
   ingress: []
   egress:
+    # The apt caching proxy in this namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apt-cache
+      ports:
+        - protocol: TCP
+          port: 3142
     # The Docker Hub pull-through cache in this namespace.
     - to:
         - podSelector:

@@ -140,6 +140,10 @@ spec:
                 mountPath: /var/run
               - name: cache
                 mountPath: /opt/cache
+              - name: apt-proxy
+                mountPath: /etc/apt/apt.conf.d/01proxy
+                subPath: 01proxy
+                readOnly: true
         # The runner image runs as uid 1001; fsGroup 123 is its docker group,
         # which owns the shared cache volume so every runner can write to it.
         securityContext:
@@ -155,3 +159,6 @@ spec:
           - name: cache
             persistentVolumeClaim:
               claimName: argus-runners-cache
+          - name: apt-proxy
+            configMap:
+              name: argus-runners-apt-proxy

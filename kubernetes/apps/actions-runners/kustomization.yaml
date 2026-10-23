@@ -8,6 +8,7 @@ components:
 
 resources:
   - ./namespace.yaml
+  - ./apt-cache/ks.yaml
   - ./arc-controller/ks.yaml
   - ./argus-runners/ks.yaml
   - ./docker-mirror/ks.yaml

@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-runners-apt-proxy
+data:
+  # Mounted as /etc/apt/apt.conf.d/01proxy in the runner container. Only
+  # plain-HTTP archives (archive/security.ubuntu.com) go through apt-cache;
+  # https sources such as the git-core PPA stay direct, since apt-cacher-ng
+  # can only pass those through, not cache them.
+  01proxy: |-
+    Acquire::http::Proxy "http://apt-cache.actions-runners.svc.cluster.local:3142";
