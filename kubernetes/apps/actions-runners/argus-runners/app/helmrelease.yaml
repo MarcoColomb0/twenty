@@ -76,12 +76,15 @@ spec:
             # request equal to a 3Gi limit would reserve 3Gi per idle-ish job
             # on nodes whose memory is already 80%+ reserved, and a build that
             # spikes past the request is the expected case, not an outage.
+            # Argus' image builds run BuildKit inside this daemon, so the web
+            # image's `next build` lands here; its e2e twin peaked at 2.5Gi in
+            # the runner container, which left 3Gi with no margin.
             resources:
               requests:
                 cpu: 100m
                 memory: 512Mi
               limits:
-                memory: 3Gi
+                memory: 5Gi
             volumeMounts:
               - name: work
                 mountPath: /home/runner/_work
