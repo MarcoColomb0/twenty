@@ -101,6 +101,23 @@ spec:
       # NOTE: crowdsecurity/whitelists stays enabled on purpose. It whitelists
       # RFC1918, which is what stops a parsing mistake from banning the
       # cloudflared pod and taking every public service down with it.
+      # The image's entrypoint only runs "cscli hub update" and "cscli hub
+      # upgrade" when the hub and data directories are volumes; without them
+      # every pod ran the hub baked into the image (index dated 2026-09-03 in
+      # v1.8.1) and never saw a new scenario or virtual patch. Empty volumes make
+      # each start fetch the current hub; hub-refresh.yaml restarts the pods daily
+      # so a start happens. The data directory gets symlinks to the image's
+      # preloaded files (GeoLite MMDBs among them), so only changed files download.
+      extraVolumes: &hub-volumes
+        - name: hub
+          emptyDir: {}
+        - name: data
+          emptyDir: {}
+      extraVolumeMounts: &hub-mounts
+        - name: hub
+          mountPath: /etc/crowdsec/hub
+        - name: data
+          mountPath: /var/lib/crowdsec/data
       resources:
         requests:
           cpu: 10m
@@ -123,6 +140,17 @@ spec:
       # so every external request was waved through unexamined for 19 hours,
       # with nothing in the UI to suggest the WAF was not running.
       replicas: 2
+      # The chart defaults to Recreate, which stops both replicas before starting
+      # either: every upgrade or restart left the gateway uninspected until the new
+      # pods passed their startup probe. With maxUnavailable 0 the old pods keep
+      # serving until a new one is ready, so a start that fails changes nothing.
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+      extraVolumes: *hub-volumes
+      extraVolumeMounts: *hub-mounts
       configs:
         twenty-appsec-full.yaml: |
           name: twenty/appsec-full

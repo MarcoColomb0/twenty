@@ -7,3 +7,4 @@ resources:
   - ./helmrepository.yaml
   - ./secret.sops.yaml
   - ./pdb.yaml
+  - ./hub-refresh.yaml
