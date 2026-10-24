@@ -1,0 +1,88 @@
+---
+# Restarts the agents and AppSec once a day so each pod fetches the current hub
+# on start (see extraVolumes in helmrelease.yaml). Nothing in CrowdSec upgrades
+# hub items while running, and new virtual patches arrive through the hub.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crowdsec-hub-refresh
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crowdsec-hub-refresh
+rules:
+  - apiGroups:
+      - "apps"
+    resources:
+      - "deployments"
+    resourceNames:
+      - "crowdsec-appsec"
+    verbs:
+      - "get"
+      - "patch"
+  - apiGroups:
+      - "apps"
+    resources:
+      - "daemonsets"
+    resourceNames:
+      - "crowdsec-agent"
+    verbs:
+      - "get"
+      - "patch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crowdsec-hub-refresh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crowdsec-hub-refresh
+subjects:
+  - kind: ServiceAccount
+    name: crowdsec-hub-refresh
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crowdsec-hub-refresh
+spec:
+  schedule: "30 4 * * *"
+  timeZone: Europe/Rome
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: crowdsec-hub-refresh
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: kubectl
+              image: registry.k8s.io/kubectl:v1.37.1
+              args:
+                - rollout
+                - restart
+                - deployment/crowdsec-appsec
+                - daemonset/crowdsec-agent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+              resources:
+                requests:
+                  cpu: 10m
+                limits:
+                  memory: 64Mi
