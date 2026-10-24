@@ -35,7 +35,7 @@ spec:
       spec:
         initContainers:
           - name: init-dind-externals
-            image: ghcr.io/actions/actions-runner:2.338.0
+            image: ghcr.io/actions/actions-runner:2.338.1
             command:
               - "cp"
               - "-r"
@@ -94,7 +94,7 @@ spec:
                 mountPath: /home/runner/externals
         containers:
           - name: runner
-            image: ghcr.io/actions/actions-runner:2.338.0
+            image: ghcr.io/actions/actions-runner:2.338.1
             # The image ships /home/runner as 0777, world-writable with no
             # sticky bit. Next.js' SWC refuses to load its native binding from
             # a cache under such a directory (ERR_SWC_NATIVE_CACHE), which
