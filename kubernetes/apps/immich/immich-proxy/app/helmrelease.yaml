@@ -109,7 +109,7 @@ spec:
           app:
             image:
               repository: docker.io/alangrainger/immich-public-proxy-upload
-              tag: "4.1.1"
+              tag: "4.1.2"
             env:
               IMMICH_URL: http://immich-app.immich.svc.cluster.local:2283
               PUBLIC_BASE_URL: https://photos.${SECRET_DOMAIN}
