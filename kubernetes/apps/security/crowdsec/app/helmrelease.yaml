@@ -17,6 +17,31 @@ spec:
     container_runtime: containerd
 
     config:
+      # The image's default profiles, with the ban length growing each time the
+      # same IP comes back: 4h, then 8h, 12h... The scanners hitting the external
+      # gateway are cloud VMs that simply wait out a flat 4h ban and return.
+      # GetDecisionsCount includes expired decisions until the LAPI flushes them
+      # (max_age 7d), so the escalation resets after a quiet week.
+      #
+      # Mounted by subPath, so it overrides the copy on the config PVC.
+      profiles.yaml: |
+        name: default_ip_remediation
+        filters:
+          - Alert.Remediation == true && Alert.GetScope() == "Ip"
+        decisions:
+          - type: ban
+            duration: 4h
+        duration_expr: Sprintf('%dh', (GetDecisionsCount(Alert.GetValue()) + 1) * 4)
+        on_success: break
+        ---
+        name: default_range_remediation
+        filters:
+          - Alert.Remediation == true && Alert.GetScope() == "Range"
+        decisions:
+          - type: ban
+            duration: 4h
+        duration_expr: Sprintf('%dh', (GetDecisionsCount(Alert.GetValue()) + 1) * 4)
+        on_success: break
       parsers:
         s02-enrich:
           # Every 403 the external gateway emits is the bouncer's own ext_authz
@@ -243,6 +268,21 @@ spec:
             - filter: IsInBand && req.Host == "notes.${SECRET_DOMAIN}"
               apply:
                 - RemoveInBandRuleByID(911100) # method not allowed by policy
+          # By default every in-band block raises its own alert. A scanner sends
+          # hundreds of requests in the seconds before its ban reaches the
+          # bouncer, so one burst became 100-330 alerts: 1316 of 1339 in a week
+          # were these, against 23 that actually carried a ban, and they used up
+          # the console's monthly alert quota on the 1st.
+          #
+          # CancelAlert drops only the per-request alert. The request is still
+          # blocked, and the event is still emitted -- that event is what
+          # crowdsecurity/appsec-native and appsec-vpatch count to create the
+          # IP ban, and their alert is the one that reaches the console and the
+          # community. CancelEvent would break banning; do not add it here.
+          on_match:
+            - filter: IsInBand
+              apply:
+                - CancelAlert()
       acquisitions:
         - source: appsec
           listen_addr: "0.0.0.0:7422"

@@ -45,7 +45,11 @@ spec:
       bouncer:
         enabled: true
         lapiURL: http://crowdsec-service.security.svc.cluster.local:8080
-        tickerInterval: 10s
+        # How long a fresh ban takes to reach the bouncer. Scanners send
+        # 100-300 requests in a few seconds, and everything inside this window
+        # still reaches the WAF; 10s let whole bursts through before the ban
+        # applied. The stream pull is a delta, so the LAPI cost is negligible.
+        tickerInterval: 2s
         metrics: true
         # Registered with the LAPI at startup from BOUNCER_KEY_envoy; this is
         # the same value under a second key in the same secret.
