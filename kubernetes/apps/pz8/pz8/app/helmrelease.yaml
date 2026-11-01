@@ -85,6 +85,42 @@ spec:
                 memory: 256Mi
               limits:
                 memory: 2Gi
+      lsp:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ${LSP_IMAGE}
+              tag: ${LSP_TAG}
+            # Same shape as pz8's app: the exports live in the encrypted script,
+            # so not even the variable names are published.
+            command:
+              - /bin/sh
+              - /var/run/lsp/run
+            probes:
+              liveness: &lspProbes
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: &lspPort 7000
+                  initialDelaySeconds: 20
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness: *lspProbes
+            # Runs as root, which the pod already allows: the image writes its
+            # caches under its own root-owned working directory, next to files
+            # it ships there, so an emptyDir over it would hide those.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 50m
+              limits:
+                memory: 1Gi
     defaultPodOptions:
       # The cluster is IPv4-only, but these two names resolve to AAAA records
       # as well and prx's client picks one and gives up:
@@ -118,8 +154,17 @@ spec:
             app:
               - path: /var/run/pz8
                 readOnly: true
+      lsp-runtime:
+        type: secret
+        name: lsp-env
+        advancedMounts:
+          lsp:
+            app:
+              - path: /var/run/lsp
+                readOnly: true
     service:
       app:
+        controller: pz8
         ports:
           http:
             port: *appPort
@@ -128,6 +173,11 @@ spec:
         ports:
           http:
             port: *prxPort
+      lsp:
+        controller: lsp
+        ports:
+          http:
+            port: *lspPort
     route:
       app:
         hostnames:
@@ -150,3 +200,11 @@ spec:
           - backendRefs:
               - identifier: prx
                 port: *prxPort
+      lsp:
+        hostnames:
+          - "lsp.${SECRET_DOMAIN}"
+        parentRefs: *internal
+        rules:
+          - backendRefs:
+              - identifier: lsp
+                port: *lspPort

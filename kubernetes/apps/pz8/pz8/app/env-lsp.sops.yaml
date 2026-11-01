@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lsp-env
+type: Opaque
+stringData:
+  run: ENC[AES256_GCM,data:MqRfF6sT6F2MMxyhgdG4veM0ZKTZRp/ZresiMy8WpBDsYXt3HxAqJju6XdjgpKnXE1yeLEQbg31B6DzWI5uRNnBHYO0qmHxA17Fr+0KeG8qYmFJGFi7W/5VLcJ1P+mtDV1oJKhvcLg==,iv:ayPAxib4xpqYEfa/aiEl8gkcDjgtgSlxu842AaM8mWQ=,tag:8pRzZLkpTsshLvkkVUNknw==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSByU1o1WS91RjBHYTkwZzc1
+        YUkrUTliRVZoSGdjZE9DN3NicWUrNFkrOEM4CkRveUJzM3dmS25DK3ZGWW9UUzhk
+        cVpaUUdiazVmQW0wWFlOeDk4a0FhQUkKLS0tIFhhRTYyUklienJ6VW1KazlaQ3Rn
+        RGlxN1YzaHBQczVDL0VUbWduS1Naa2cKq9IQiTkJUsKvFO3QPAQ0b0c8XioCuR9S
+        O2OBoICf2XzdvGShVYZN9nUZp6lR0SxhSrqBktJ+gsQWCekl5MKBag==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-11-01T21:52:03Z"
+  mac: ENC[AES256_GCM,data:C72xYPLLhUaPrs1mAVE9+8bd3jtrnfxsHcXzQx+4bEovz8Ir8HbJptwU+Kue+6tXfujWUbxbhr82ej5yACmwmC2oU6hiXuFIOKvK3c7fmEQITNlm9UgWEWNHaPmU2mQnxfW1+qXhp8rfwE4I0lpJTI9zGbhXoAMTPcHTblpKlsM=,iv:kAf9jo64fCSNUl9gf8RCBVTh3jA/Uf78Sw93dekv5z4=,tag:LtcCS6L1lPQingLl+jXIlw==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

@@ -8,3 +8,4 @@ resources:
   - ./pvc.yaml
   - ./env-app.sops.yaml
   - ./env-prx.sops.yaml
+  - ./env-lsp.sops.yaml
