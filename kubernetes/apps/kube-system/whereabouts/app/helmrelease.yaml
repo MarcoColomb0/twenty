@@ -1,0 +1,36 @@
+---
+# Cluster-wide IPAM for the storage network. host-local cannot do it: it hands
+# out addresses per node from one shared range, so two nodes would give the
+# same address to two instance managers. There is no DHCP on VLAN 69 either.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: whereabouts
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: whereabouts
+  interval: 1h
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    fullnameOverride: whereabouts
+    # Pre-allocates a slice of the range to each node. Worth it with hundreds of
+    # pods on a network; this one holds one instance manager per node.
+    nodeSliceController:
+      enabled: false
+    priorityClassName: system-node-critical
+    # null clears the chart defaults Helm would otherwise merge back in: a CPU
+    # limit, and a memory request below the limit.
+    resources: &resources
+      requests:
+        cpu: 10m
+        memory: null
+      limits:
+        cpu: null
+        memory: 64Mi
+    reconciler:
+      logLevel: info
+      resources: *resources

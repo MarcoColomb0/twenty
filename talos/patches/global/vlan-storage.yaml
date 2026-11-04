@@ -1,0 +1,25 @@
+# VLAN 69: storage, layer 2 only. The switch ports carry the homelab network
+# (VLAN 100) untagged and this one tagged; there is no gateway on it.
+#
+# No addresses on purpose. Nothing on the host talks over it -- Longhorn's
+# instance managers get their own macvlan interfaces on top of it through
+# Multus (storage/longhorn/network). A link without a global address is also
+# invisible to Cilium's device auto-detection, so it does not attach BPF or
+# answer L2 announcements here, and neither cilium nor the L2 policy needs a
+# device list.
+#
+# Named vlan69 on every node rather than <nic>.69: the NICs are enp1s0 on two
+# nodes and enp2s0f0 on the third, and the NetworkAttachmentDefinition is
+# cluster-wide, so its macvlan master has to be one name everywhere. ethSel0 is
+# the alias talhelper gives the first networkInterfaces entry of each node.
+#
+# MTU 1500 -- a VLAN cannot exceed its parent, and raising the parent to 9000
+# would also put VLAN 100 (untagged on it) at 9000 and, on r8169, turn off
+# checksum offload and TSO for every packet the node sends.
+---
+apiVersion: v1alpha1
+kind: VLANConfig
+name: vlan69
+vlanID: 69
+parent: ethSel0
+mtu: 1500

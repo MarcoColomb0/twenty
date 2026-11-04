@@ -109,6 +109,7 @@ patches:
   - "@./patches/global/machine-kubelet.yaml"
   - "@./patches/global/resolver.yaml"
   - "@./patches/global/machine-sysctls.yaml"
+  - "@./patches/global/vlan-storage.yaml"
   - "@./patches/global/machine-time.yaml"
   - "@./patches/global/machine-longhorn.yaml"
 

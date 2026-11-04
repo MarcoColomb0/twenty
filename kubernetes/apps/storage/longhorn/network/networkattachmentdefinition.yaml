@@ -1,0 +1,33 @@
+---
+# Longhorn's data path (engine <-> replica, rebuilds) on VLAN 69, referenced as
+# longhorn-system/longhorn-storage by the storageNetwork setting.
+#
+# Longhorn cannot see edits to this object once the setting names it -- its
+# docs say to create a new one and point the setting at that instead, which
+# means detaching every volume again. So it is written to never need an edit:
+#
+# - No "mtu". A macvlan inherits its master's MTU when the pod starts, so if
+#   vlan69 is ever raised to 9000 the instance managers pick it up as they are
+#   recreated, and TCP settles mixed peers on the smaller MSS meanwhile.
+# - "master" is vlan69, the same name on every node (talos/patches/global/
+#   vlan-storage.yaml).
+#
+# Traffic on this interface bypasses Cilium, so NetworkPolicies do not apply to
+# it. VLAN 69 has no gateway and nothing else on it.
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: longhorn-storage
+spec:
+  config: |-
+    {
+      "cniVersion": "0.3.1",
+      "name": "longhorn-storage",
+      "type": "macvlan",
+      "master": "vlan69",
+      "mode": "bridge",
+      "ipam": {
+        "type": "whereabouts",
+        "range": "10.69.0.0/24"
+      }
+    }

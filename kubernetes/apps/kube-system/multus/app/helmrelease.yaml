@@ -1,0 +1,135 @@
+---
+# Multus, thin plugin. Exists to give Longhorn's instance managers a second
+# interface on the storage VLAN; every other pod keeps Cilium alone.
+#
+# Thin rather than thick: the thin entrypoint only writes 00-multus.conf and a
+# kubeconfig into /etc/cni/net.d and the binary into /opt/cni/bin, and the
+# kubelet runs the binary itself. The thick daemon wants the host's / and
+# /var/lib/kubelet mounted with propagation, for nothing this cluster uses.
+#
+# Once installed, 00-multus.conf sorts ahead of 05-cilium.conflist, so Multus is
+# the CNI the kubelet calls for *every* pod and it delegates to Cilium. If it
+# breaks, sandbox creation fails cluster-wide -- check this daemonset first
+# when new pods sit in ContainerCreating. cni.exclusive: false in the cilium
+# release is what stops Cilium deleting that file.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: multus
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: multus
+  interval: 1h
+  values:
+    controllers:
+      multus:
+        type: daemonset
+        serviceAccount:
+          identifier: multus
+        pod:
+          hostNetwork: true
+          priorityClassName: system-node-critical
+          tolerations:
+            - operator: Exists
+              effect: NoSchedule
+            - operator: Exists
+              effect: NoExecute
+        initContainers:
+          install-multus:
+            image: &image
+              repository: ghcr.io/k8snetworkplumbingwg/multus-cni
+              tag: v4.3.1
+            command:
+              - /install_multus
+            args:
+              - --type
+              - thin
+            securityContext:
+              privileged: true
+          # Talos ships bridge, firewall, host-local, loopback and portmap, but
+          # not macvlan. The image's default command rsyncs every plugin, which
+          # would overwrite the Talos-provided binaries too; copy only the one
+          # that is missing.
+          install-macvlan:
+            image:
+              repository: ghcr.io/home-operations/cni-plugins
+              tag: 1.9.1
+            command:
+              - rsync
+              - -a
+              - /plugins/macvlan
+              - /host/opt/cni/bin/
+            securityContext:
+              privileged: true
+        containers:
+          multus:
+            image: *image
+            command:
+              - /thin_entrypoint
+            # cleanup-config-on-exit stays at its default (false). With it, a
+            # pod created while this daemon restarts gets Cilium only and no
+            # storage interface, and an instance manager without one cannot
+            # reach its replicas. Without it the stale config fails sandbox
+            # creation for those few seconds, and the kubelet retries.
+            args:
+              - --multus-conf-file=auto
+              - --multus-autoconfig-dir=/host/etc/cni/net.d
+              - --cni-conf-dir=/host/etc/cni/net.d
+            securityContext:
+              privileged: true
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 64Mi
+    serviceAccount:
+      multus: {}
+    rbac:
+      roles:
+        multus:
+          type: ClusterRole
+          rules:
+            - apiGroups:
+                - "k8s.cni.cncf.io"
+              resources:
+                - "*"
+              verbs:
+                - "*"
+            - apiGroups:
+                - ""
+              resources:
+                - "pods"
+                - "pods/status"
+              verbs:
+                - "get"
+                - "list"
+                - "update"
+                - "watch"
+            - apiGroups:
+                - ""
+                - "events.k8s.io"
+              resources:
+                - "events"
+              verbs:
+                - "create"
+                - "patch"
+                - "update"
+      bindings:
+        multus:
+          type: ClusterRoleBinding
+          roleRef:
+            identifier: multus
+          subjects:
+            - identifier: multus
+    persistence:
+      cni-conf:
+        type: hostPath
+        hostPath: /etc/cni/net.d
+        globalMounts:
+          - path: /host/etc/cni/net.d
+      cni-bin:
+        type: hostPath
+        hostPath: /opt/cni/bin
+        globalMounts:
+          - path: /host/opt/cni/bin

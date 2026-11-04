@@ -17,3 +17,26 @@ spec:
     namespace: flux-system
   targetNamespace: longhorn-system
   wait: true
+---
+# The storage-network attachment, kept apart from the chart so the multus and
+# whereabouts dependencies do not hold up Longhorn itself. Nothing uses it
+# until the chart's storageNetwork setting names it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: longhorn-network
+spec:
+  dependsOn:
+    - name: multus
+      namespace: kube-system
+    - name: whereabouts
+      namespace: kube-system
+  interval: 1h
+  path: ./kubernetes/apps/storage/longhorn/network
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: longhorn-system
+  wait: true
