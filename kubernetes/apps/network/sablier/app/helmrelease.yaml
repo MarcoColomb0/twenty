@@ -27,7 +27,7 @@ spec:
           app:
             image:
               repository: ghcr.io/sablierapp/sablier
-              tag: 1.18.0
+              tag: 1.19.1
             env:
               SABLIER_PROVIDER_NAME: kubernetes
               SABLIER_SERVER_PORT: &port 10000
