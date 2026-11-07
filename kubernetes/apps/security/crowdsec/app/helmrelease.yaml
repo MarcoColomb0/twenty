@@ -268,6 +268,10 @@ spec:
             - filter: IsInBand && req.Host == "notes.${SECRET_DOMAIN}"
               apply:
                 - RemoveInBandRuleByID(911100) # method not allowed by policy
+            # Perses saves a dashboard with PUT and removes one with DELETE.
+            - filter: IsInBand && req.Host == "perses.${SECRET_DOMAIN}"
+              apply:
+                - RemoveInBandRuleByID(911100) # method not allowed by policy
           # By default every in-band block raises its own alert. A scanner sends
           # hundreds of requests in the seconds before its ban reaches the
           # bouncer, so one burst became 100-330 alerts: 1316 of 1339 in a week
