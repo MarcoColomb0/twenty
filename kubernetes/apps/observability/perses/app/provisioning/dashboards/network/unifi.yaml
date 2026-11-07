@@ -1,0 +1,483 @@
+---
+# UniFi Express 7 and its clients, from unpoller in observability.
+#
+#   - unpoller polls the console every 60s and serves a cache, so nothing here
+#     moves faster than a minute.
+#   - unpoller_site_* carries a `subsystem` label (www, wan, lan, wlan, vpn);
+#     each subsystem exports its own subset of the metrics.
+#   - The "www" latency is the console's own internet check, measured from
+#     behind the D-Link, so it covers the DSL line and the D-Link together.
+#   - Wired clients export only byte and packet counters; every radio metric
+#     is wireless-only.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: unifi
+  project: network
+spec:
+  display:
+    name: UniFi
+    description: 'The UniFi Express 7 at 192.168.100.1: gateway health, internet latency and throughput, and the clients behind it.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    up:
+      kind: Panel
+      spec:
+        display:
+          name: Poller up
+          description: Whether unpoller is reaching the console. Every other panel goes blank when this is red.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(unpoller_device_info) or vector(0)
+    clients:
+      kind: Panel
+      spec:
+        display:
+          name: Clients
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(unpoller_client_uptime_seconds)
+    wireless:
+      kind: Panel
+      spec:
+        display:
+          name: Wireless clients
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count(unpoller_client_uptime_seconds{wired="false"})
+    latency:
+      kind: Panel
+      spec:
+        display:
+          name: Internet latency
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.1
+                  color: '#ffb300'
+                - value: 0.3
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(unpoller_site_latency_seconds{subsystem="www"})
+    drops:
+      kind: Panel
+      spec:
+        display:
+          name: Internet drops
+          description: Times the console lost its internet check over the selected range.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  # The upstream metric name really is "intenet".
+                  query: sum(increase(unpoller_site_intenet_drops_total{subsystem="www"}[$__range]))
+    uptime:
+      kind: Panel
+      spec:
+        display:
+          name: Gateway uptime
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(unpoller_device_uptime_seconds)
+    wanRate:
+      kind: Panel
+      spec:
+        display:
+          name: Internet throughput
+          description: The console's own WAN rate; receive is download.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(unpoller_site_receive_rate_bytes{subsystem="www"})
+                  seriesNameFormat: download
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(unpoller_site_transmit_rate_bytes{subsystem="www"})
+                  seriesNameFormat: upload
+    latencyGraph:
+      kind: Panel
+      spec:
+        display:
+          name: Internet latency
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(unpoller_site_latency_seconds{subsystem="www"})
+                  seriesNameFormat: latency
+    topClients:
+      kind: Panel
+      spec:
+        display:
+          name: Busiest clients
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: topk(10, sum by (name) (unpoller_client_receive_rate_bytes + unpoller_client_transmit_rate_bytes))
+                  seriesNameFormat: '{{name}}'
+    clientCount:
+      kind: Panel
+      spec:
+        display:
+          name: Clients by connection
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: count by (wired) (unpoller_client_uptime_seconds)
+                  seriesNameFormat: 'wired={{wired}}'
+    cpu:
+      kind: Panel
+      spec:
+        display:
+          name: Gateway CPU and memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name) (unpoller_device_cpu_utilization_ratio)
+                  seriesNameFormat: '{{name}} CPU'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name) (unpoller_device_memory_utilization_ratio)
+                  seriesNameFormat: '{{name}} memory'
+    temperature:
+      kind: Panel
+      spec:
+        display:
+          name: Temperature
+          description: Blank if the console reports no sensors.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: °C
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (name, temp_area) (unpoller_device_temperature_celsius)
+                  seriesNameFormat: '{{name}} {{temp_area}}'
+    satisfaction:
+      kind: Panel
+      spec:
+        display:
+          name: Least satisfied wireless clients
+          description: UniFi's own 0-100% score for a wireless link -- signal, retries and rate together.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: bottomk(5, min by (name) (unpoller_client_satisfaction_ratio))
+                  seriesNameFormat: '{{name}}'
+    signal:
+      kind: Panel
+      spec:
+        display:
+          name: Weakest wireless signal
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: right
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: dBm
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: bottomk(5, min by (name) (unpoller_client_radio_signal_db))
+                  seriesNameFormat: '{{name}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Overview
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/up'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/clients'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/wireless'
+          - x: 12
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/latency'
+          - x: 16
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/drops'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/uptime'
+    - kind: Grid
+      spec:
+        display:
+          title: Internet
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/wanRate'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/latencyGraph'
+    - kind: Grid
+      spec:
+        display:
+          title: Clients
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 16
+            height: 8
+            content:
+              $ref: '#/spec/panels/topClients'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/clientCount'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/satisfaction'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/signal'
+    - kind: Grid
+      spec:
+        display:
+          title: Gateway
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/cpu'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 7
+            content:
+              $ref: '#/spec/panels/temperature'
+  links:
+    - name: unpoller metrics
+      url: https://unpoller.com/docs/
+      targetBlank: true
