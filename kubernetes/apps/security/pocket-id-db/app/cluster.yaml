@@ -20,7 +20,7 @@ spec:
       resize.topolvm.io/threshold: 20%
       resize.topolvm.io/increase: 20%
   storage:
-    size: 2Gi
+    size: 15Gi
     storageClass: longhorn
   # Continuous WAL archiving. The ScheduledBackup takes base backups; this is
   # what lets recovery land between them rather than only on one.
