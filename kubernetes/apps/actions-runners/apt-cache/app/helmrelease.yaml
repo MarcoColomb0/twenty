@@ -20,7 +20,7 @@ spec:
           app:
             image:
               repository: docker.io/mbentley/apt-cacher-ng
-              tag: trixie-20261023
+              tag: trixie-20261107
             # The image's entrypoint runs as root and also starts cron and
             # rsyslog; only the daemon is wanted, in the foreground, as its
             # own user. Its daily cache-expiry cron job is therefore not run;
