@@ -14,3 +14,4 @@ resources:
   - ./kromgo/ks.yaml
   - ./ntfy/ks.yaml
   - ./perses/ks.yaml
+  - ./unpoller/ks.yaml
