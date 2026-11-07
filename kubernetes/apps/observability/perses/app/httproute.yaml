@@ -7,11 +7,12 @@ spec:
   hostnames:
     - "perses.${SECRET_DOMAIN}"
   parentRefs:
-    # Internal only, unlike the Grafana it replaces; remote access is the
-    # Tailscale subnet router. Saving a dashboard is a PUT, which CRS 911100
-    # blocks single-strike on the external gateway, and a 0.x server holding a
-    # proxy to an unauthenticated Prometheus has no business on the internet.
-    - name: envoy-internal
+    # External. Every API path and the Prometheus proxy answer 401 without a
+    # Pocket ID session, and allowedUserGroups on the OIDC client is what
+    # decides who gets one. Saving or deleting a dashboard is a PUT or DELETE,
+    # which CRS 911100 blocks single-strike, so the crowdsec AppSec config
+    # removes that rule for this host.
+    - name: envoy-external
       namespace: network
       sectionName: https
   rules:
