@@ -269,9 +269,21 @@ spec:
               apply:
                 - RemoveInBandRuleByID(911100) # method not allowed by policy
             # Perses saves a dashboard with PUT and removes one with DELETE.
+            #
+            # 942100 is libinjection, which reads PromQL's aggregations as SQL:
+            # count(, max(, min(, avg( and sum( all score as injection, with or
+            # without a space, while `max by (x) (...)` passes. Found by replaying
+            # every dashboard query through envoy-external with a spoofed
+            # 198.18.0.0/15 source -- 89 of 385 blocked, the alert naming
+            # 942100. Dashboard queries are POSTs and the bouncer never sees
+            # bodies, so those are unaffected; what breaks is PromQL in a URL:
+            # the Explore page keeps its queries in the query string, and
+            # variables and autocomplete fetch label values with GET match[].
+            # Perses stores nothing in SQL, so there is nothing for it to guard.
             - filter: IsInBand && req.Host == "perses.${SECRET_DOMAIN}"
               apply:
                 - RemoveInBandRuleByID(911100) # method not allowed by policy
+                - RemoveInBandRuleByID(942100) # SQL injection via libinjection
           # By default every in-band block raises its own alert. A scanner sends
           # hundreds of requests in the seconds before its ban reaches the
           # bouncer, so one burst became 100-330 alerts: 1316 of 1339 in a week
