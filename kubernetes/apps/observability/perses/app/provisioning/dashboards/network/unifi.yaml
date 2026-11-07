@@ -9,6 +9,8 @@
 #     behind the D-Link, so it covers the DSL line and the D-Link together.
 #   - Wired clients export only byte and packet counters; every radio metric
 #     is wireless-only.
+#   - unpoller reports the UX7 as type="udm" (model UDMA69B); the Flex 2.5G
+#     switch is type="usw". Gateway-only panels filter on type="udm".
 #   - Grid is 24 columns wide.
 kind: Dashboard
 metadata:
@@ -17,7 +19,7 @@ metadata:
 spec:
   display:
     name: UniFi
-    description: 'The UniFi Express 7 at 192.168.100.1: gateway health, internet latency and throughput, and the clients behind it.'
+    description: 'The UniFi Express 7 at 192.168.100.1 and its switch: device health, internet latency and throughput, and the clients behind it.'
   duration: 6h
   refreshInterval: 1m
   panels:
@@ -25,8 +27,8 @@ spec:
       kind: Panel
       spec:
         display:
-          name: Poller up
-          description: Whether unpoller is reaching the console. Every other panel goes blank when this is red.
+          name: Devices
+          description: Adopted UniFi devices unpoller can see -- the UX7 and the Flex 2.5G switch. Zero means unpoller is not reaching the console, and every other panel goes blank with it.
         plugin:
           kind: StatChart
           spec:
@@ -154,7 +156,7 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: max(unpoller_device_uptime_seconds)
+                  query: max(unpoller_device_uptime_seconds{type="udm"})
     wanRate:
       kind: Panel
       spec:
@@ -265,7 +267,7 @@ spec:
       kind: Panel
       spec:
         display:
-          name: Gateway CPU and memory
+          name: Device CPU and memory
         plugin:
           kind: TimeSeriesChart
           spec:
