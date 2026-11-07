@@ -1,7 +1,7 @@
 ---
-# Cilium agent, operator and Hubble metrics (enabled in kube-system/cilium).
+# Cilium agent and operator metrics (enabled in kube-system/cilium).
 #
-#   - Hubble metrics are per node; sums are cluster-wide.
+#   - Agent metrics are per node; sums are cluster-wide.
 #   - Grid is 24 columns wide.
 kind: Dashboard
 metadata:
@@ -10,7 +10,7 @@ metadata:
 spec:
   display:
     name: Cilium
-    description: 'The CNI: native routing with kube-proxy replacement, L2 announcements for the LoadBalancer IPs, and Hubble''s view of every flow.'
+    description: 'The CNI: native routing with kube-proxy replacement, and L2 announcements for the LoadBalancer IPs.'
   duration: 6h
   refreshInterval: 1m
   panels:
@@ -116,26 +116,6 @@ spec:
                 kind: PrometheusTimeSeriesQuery
                 spec:
                   query: sum(cilium_controllers_failing)
-    dropRate:
-      kind: Panel
-      spec:
-        display:
-          name: Dropped
-          description: Share of flows Cilium dropped over the selected range.
-        plugin:
-          kind: StatChart
-          spec:
-            calculation: last-number
-            format:
-              unit: percent-decimal
-              decimalPlaces: 3
-        queries:
-          - kind: TimeSeriesQuery
-            spec:
-              plugin:
-                kind: PrometheusTimeSeriesQuery
-                spec:
-                  query: sum(rate(hubble_flows_processed_total{verdict="DROPPED"}[$__range])) / sum(rate(hubble_flows_processed_total[$__range]))
     version:
       kind: Panel
       spec:
@@ -153,33 +133,6 @@ spec:
                 kind: PrometheusTimeSeriesQuery
                 spec:
                   query: max by (version) (cilium_version)
-    flows:
-      kind: Panel
-      spec:
-        display:
-          name: Flows by protocol
-        plugin:
-          kind: TimeSeriesChart
-          spec:
-            legend:
-              position: bottom
-              mode: list
-            yAxis:
-              format:
-                unit: decimal
-              label: flows/s
-            visual:
-              stack: all
-              areaOpacity: 0.5
-              lineWidth: 1
-        queries:
-          - kind: TimeSeriesQuery
-            spec:
-              plugin:
-                kind: PrometheusTimeSeriesQuery
-                spec:
-                  query: sum by (protocol) (rate(hubble_flows_processed_total[$__rate_interval]))
-                  seriesNameFormat: '{{protocol}}'
     bytes:
       kind: Panel
       spec:
@@ -224,32 +177,8 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum by (reason) (rate(hubble_drop_total[$__rate_interval])) > 0
+                  query: sum by (reason) (rate(cilium_drop_count_total[$__rate_interval])) > 0
                   seriesNameFormat: '{{reason}}'
-    tcpFlags:
-      kind: Panel
-      spec:
-        display:
-          name: TCP flags
-          description: RST climbing against SYN means connections are being refused or torn down.
-        plugin:
-          kind: TimeSeriesChart
-          spec:
-            legend:
-              position: bottom
-              mode: list
-            yAxis:
-              format:
-                unit: decimal
-              label: packets/s
-        queries:
-          - kind: TimeSeriesQuery
-            spec:
-              plugin:
-                kind: PrometheusTimeSeriesQuery
-                spec:
-                  query: sum by (flag) (rate(hubble_tcp_flags_total[$__rate_interval]))
-                  seriesNameFormat: '{{flag}}'
     conntrack:
       kind: Panel
       spec:
@@ -385,34 +314,28 @@ spec:
         items:
           - x: 0
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/agents'
-          - x: 4
+          - x: 5
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/unreachable'
-          - x: 8
+          - x: 10
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/endpoints'
-          - x: 12
+          - x: 15
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/failing'
-          - x: 16
-            "y": 0
-            width: 4
-            height: 4
-            content:
-              $ref: '#/spec/panels/dropRate'
           - x: 20
             "y": 0
             width: 4
@@ -431,25 +354,13 @@ spec:
             width: 12
             height: 8
             content:
-              $ref: '#/spec/panels/flows'
+              $ref: '#/spec/panels/bytes'
           - x: 12
             "y": 0
             width: 12
             height: 8
             content:
-              $ref: '#/spec/panels/bytes'
-          - x: 0
-            "y": 8
-            width: 12
-            height: 8
-            content:
               $ref: '#/spec/panels/drops'
-          - x: 12
-            "y": 8
-            width: 12
-            height: 8
-            content:
-              $ref: '#/spec/panels/tcpFlags'
     - kind: Grid
       spec:
         display:

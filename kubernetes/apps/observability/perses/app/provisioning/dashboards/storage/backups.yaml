@@ -21,34 +21,6 @@ spec:
   duration: 6h
   refreshInterval: 1m
   panels:
-    target:
-      kind: Panel
-      spec:
-        display:
-          name: Backup target reachable
-          description: ICMP to rustfs over the last 5 minutes. When it is unreachable backups stop -- and a demoted CNPG primary refuses to start until it has flushed WAL there, so database standbys wedge too.
-        plugin:
-          kind: StatChart
-          spec:
-            calculation: last-number
-            format:
-              unit: percent-decimal
-              decimalPlaces: 0
-            thresholds:
-              defaultColor: '#e53935'
-              steps:
-                - value: 0.9
-                  color: '#ffb300'
-                - value: 1
-                  color: '#43a047'
-            colorMode: background_solid
-        queries:
-          - kind: TimeSeriesQuery
-            spec:
-              plugin:
-                kind: PrometheusTimeSeriesQuery
-                spec:
-                  query: avg_over_time(probe_success{instance="192.168.1.2"}[5m])
     vsCount:
       kind: Panel
       spec:
@@ -456,31 +428,25 @@ spec:
         items:
           - x: 0
             "y": 0
-            width: 4
-            height: 4
-            content:
-              $ref: '#/spec/panels/target'
-          - x: 4
-            "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/vsCount'
-          - x: 8
+          - x: 5
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/vsOverdue'
-          - x: 12
+          - x: 10
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/vsOldest'
-          - x: 16
+          - x: 15
             "y": 0
-            width: 4
+            width: 5
             height: 4
             content:
               $ref: '#/spec/panels/walOldest'
