@@ -16,7 +16,7 @@ spec:
   # annotation up too, where it means nothing and costs nothing.
   inheritedMetadata:
     annotations:
-      resize.topolvm.io/storage_limit: 10Gi
+      resize.topolvm.io/storage_limit: 15Gi
       resize.topolvm.io/threshold: 20%
       resize.topolvm.io/increase: 20%
   storage:
