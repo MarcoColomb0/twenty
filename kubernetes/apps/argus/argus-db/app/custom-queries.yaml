@@ -1,0 +1,151 @@
+---
+# Business metrics for the argus Perses dashboard: the app exports none of its
+# own, so CloudNativePG publishes these SQL results as cnpg_<query>_<column>.
+#
+# They run as cnpg_metrics_exporter, which reads only the columns granted in
+# the Argus repo's apps/web/scripts/metrics-grants.sql. A query reading
+# anything else needs a grant there first, or it fails and
+# cnpg_collector_last_collection_error goes to 1. Aggregates only: no per-user
+# labels.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argus-metrics
+  labels:
+    cnpg.io/reload: ""
+data:
+  queries.yaml: |-
+    argus_scrape_pages:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select kind, status, count(*) as last_hour, percentile_cont(0.95) within group (order by ms) as p95_ms
+        from scrape_page_log where at > now() - interval '1 hour' group by kind, status
+      metrics:
+        - kind: {usage: LABEL, description: "listing, search, expansion, guess or warmup"}
+        - status: {usage: LABEL, description: "ok, blocked, challenged, miss, odd, rechecked or slow"}
+        - last_hour: {usage: GAUGE, description: "Pages loaded in the last hour"}
+        - p95_ms: {usage: GAUGE, description: "95th percentile load time, ms"}
+    argus_scraper:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select coalesce(extract(epoch from now() - (select max(at) from scrape_page_log)), 0) as seconds_since_last_page,
+          (select count(*) from scrape_page_log where at >= date_trunc('day', now())) as pages_today,
+          (select count(*) from scrape_page_log where at > now() - interval '24 hours' and status in ('blocked', 'challenged')) as warnings_24h,
+          (select count(*) from scrape_runs where blocked and started_at > now() - interval '7 days') as blocked_runs_7d,
+          coalesce((select extract(epoch from max(cooldown_until) - now()) from scrape_runs where cooldown_until > now()), 0) as cooldown_seconds_left
+      metrics:
+        - seconds_since_last_page: {usage: GAUGE, description: "Seconds since the scraper loaded a page"}
+        - pages_today: {usage: GAUGE, description: "Pages loaded since midnight UTC"}
+        - warnings_24h: {usage: GAUGE, description: "Blocks and challenges in 24 hours"}
+        - blocked_runs_7d: {usage: GAUGE, description: "Runs ended by a block in 7 days"}
+        - cooldown_seconds_left: {usage: GAUGE, description: "Seconds left of a block cooldown, 0 if none"}
+    argus_jobs:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select kind, count(*) filter (where status = 'queued' and run_at <= now()) as due,
+          count(*) filter (where status = 'running') as running,
+          count(*) filter (where status = 'failed' and finished_at > now() - interval '24 hours') as failed_24h,
+          count(*) filter (where status = 'done' and finished_at > now() - interval '24 hours') as done_24h,
+          coalesce(extract(epoch from now() - min(run_at) filter (where status = 'queued' and run_at <= now())), 0) as oldest_due_seconds
+        from jobs group by kind
+      metrics:
+        - kind: {usage: LABEL, description: "Job kind"}
+        - due: {usage: GAUGE, description: "Queued jobs that should be running"}
+        - running: {usage: GAUGE, description: "Jobs running now"}
+        - failed_24h: {usage: GAUGE, description: "Jobs failed for good in 24 hours"}
+        - done_24h: {usage: GAUGE, description: "Jobs finished in 24 hours"}
+        - oldest_due_seconds: {usage: GAUGE, description: "How long the oldest due job has waited"}
+    argus_workers:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select role, extract(epoch from now() - max(beat_at)) as seconds_since_heartbeat from worker_heartbeats group by role
+      metrics:
+        - role: {usage: LABEL, description: "general or scraper"}
+        - seconds_since_heartbeat: {usage: GAUGE, description: "Seconds since this process type reported in"}
+    argus_logs:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select role, level, count(*) as last_hour from worker_logs where at > now() - interval '1 hour' and level in ('WARNING', 'ERROR', 'CRITICAL') group by role, level
+      metrics:
+        - role: {usage: LABEL, description: "general or scraper"}
+        - level: {usage: LABEL, description: "Log level"}
+        - last_hour: {usage: GAUGE, description: "Log lines in the last hour"}
+    argus_prices:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        with last as (
+          select distinct on (id_product, language, min_condition, finish) id_product, language, min_condition, finish, observed_on
+          from price_observations where status = 'ok' order by id_product, language, min_condition, finish, observed_on desc
+        )
+        select count(*) as tracked_targets,
+          count(*) filter (where l.observed_on is null) as never_priced,
+          count(*) filter (where l.observed_on = current_date) as priced_today,
+          count(*) filter (where l.observed_on < current_date - 30) as stale_30d,
+          (select count(*) from tracked_cards_without_product) as tracked_cards_without_product,
+          (select count(*) from price_observations where observed_on = current_date and status = 'error') as errors_today
+        from tracked_targets t left join last l using (id_product, language, min_condition, finish)
+      metrics:
+        - tracked_targets: {usage: GAUGE, description: "Product, language, condition and finish combinations followed"}
+        - never_priced: {usage: GAUGE, description: "Followed targets with no listing price yet"}
+        - priced_today: {usage: GAUGE, description: "Targets priced today"}
+        - stale_30d: {usage: GAUGE, description: "Targets last priced over 30 days ago"}
+        - tracked_cards_without_product: {usage: GAUGE, description: "Held or wanted cards with no checked CM product"}
+        - errors_today: {usage: GAUGE, description: "Price scrapes that failed today"}
+    argus_catalog:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select extract(epoch from now() - (select max(guide_updated_at) from cm_products)) as price_guide_age_seconds,
+          extract(epoch from now() - (select max(synced_at) from tcg_sets)) as tcgdex_sync_age_seconds,
+          (select count(*) from tcg_card_variants where tcgdex_cm_product_id is not null and cm_product_id is null) as variants_in_doubt,
+          (select count(*) from tcg_card_variants where cm_product_id is not null and cm_product_id <> tcgdex_cm_product_id) as variants_corrected
+      metrics:
+        - price_guide_age_seconds: {usage: GAUGE, description: "Age of the newest price guide"}
+        - tcgdex_sync_age_seconds: {usage: GAUGE, description: "Time since a TCGdex set was last synced"}
+        - variants_in_doubt: {usage: GAUGE, description: "Card variants with no trusted CM product"}
+        - variants_corrected: {usage: GAUGE, description: "Card variants moved off TCGdex's product by a CM URL"}
+    argus_users:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select (select count(*) from "user") as total,
+          (select count(*) from "user" where banned) as blocked,
+          (select count(*) from "user" where created_at > now() - interval '7 days') as new_7d,
+          (select count(distinct user_id) from session where updated_at > now() - interval '24 hours') as active_24h,
+          (select count(distinct user_id) from session where expires_at > now()) as with_session,
+          (select count(*) from invites where created_at > now() - interval '24 hours') as invites_created_24h,
+          (select count(*) from invites where used_at > now() - interval '24 hours') as invites_used_24h,
+          (select count(*) from invites where used_at is null and expires_at > now()) as invites_open,
+          (select count(*) from login_email_sends where sent_at > now() - interval '1 hour') as login_emails_1h,
+          (select count(*) from notifications where created_at > now() - interval '24 hours') as notifications_24h,
+          (select count(*) from notifications where pushed_at > now() - interval '24 hours') as pushes_24h
+      metrics:
+        - total: {usage: GAUGE, description: "Accounts"}
+        - blocked: {usage: GAUGE, description: "Accounts with access removed"}
+        - new_7d: {usage: GAUGE, description: "Accounts created in 7 days"}
+        - active_24h: {usage: GAUGE, description: "Accounts with session activity in 24 hours"}
+        - with_session: {usage: GAUGE, description: "Accounts with a valid session"}
+        - invites_created_24h: {usage: GAUGE, description: "Invite links created in 24 hours"}
+        - invites_used_24h: {usage: GAUGE, description: "Invite links used in 24 hours"}
+        - invites_open: {usage: GAUGE, description: "Unused, unexpired invite links"}
+        - login_emails_1h: {usage: GAUGE, description: "Login emails sent in the last hour"}
+        - notifications_24h: {usage: GAUGE, description: "Notifications created in 24 hours"}
+        - pushes_24h: {usage: GAUGE, description: "Notifications pushed to a device in 24 hours"}
+    argus_portfolio:
+      primary: true
+      target_databases: ["argus"]
+      query: |
+        select count(*) as holdings, coalesce(sum(quantity), 0) as copies, count(unit_price) as priced_holdings,
+          coalesce(sum(unit_price * quantity), 0) as value_eur
+        from holding_valuations
+      metrics:
+        - holdings: {usage: GAUGE, description: "Holdings across all users"}
+        - copies: {usage: GAUGE, description: "Copies held across all users"}
+        - priced_holdings: {usage: GAUGE, description: "Holdings with a price"}
+        - value_eur: {usage: GAUGE, description: "Total value tracked, EUR"}

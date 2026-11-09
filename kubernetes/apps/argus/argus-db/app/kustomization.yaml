@@ -7,4 +7,5 @@ components:
 resources:
   - ./scraper-role.sops.yaml
   - ./cluster.yaml
+  - ./custom-queries.yaml
   - ./podmonitor.yaml
