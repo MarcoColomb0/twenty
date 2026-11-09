@@ -1,0 +1,1283 @@
+---
+# Argus: the site, its workers and scraper, and the postgres-argus Cluster.
+#
+#   - cnpg_argus_* are SQL results published by CloudNativePG, from
+#     argus/argus-db/app/custom-queries.yaml. They need the grants in the Argus
+#     repo's apps/web/scripts/metrics-grants.sql, and go blank together when
+#     cnpg_collector_last_collection_error is 1.
+#   - Those queries run on the primary only and a failover changes the pod
+#     label, so every panel takes max() rather than matching a pod.
+#   - httproute/argus/argus/rule/1 is the site; rule/0 is /vnc remote control.
+#   - Grid is 24 columns wide.
+kind: Dashboard
+metadata:
+  name: argus
+  project: argus
+spec:
+  display:
+    name: Argus
+    description: 'The site and what keeps it current: traffic, the scraper, prices and catalog, the job queue, accounts, and the database.'
+  duration: 6h
+  refreshInterval: 1m
+  panels:
+    webReplicas:
+      kind: Panel
+      spec:
+        display:
+          name: Web replicas
+          description: Replicas of argus-web serving. Two are wanted; zero is the site down.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#e53935'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+                - value: 2
+                  color: '#43a047'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: kube_deployment_status_replicas_available{namespace="argus",deployment="argus-web"}
+    errorRatio:
+      kind: Panel
+      spec:
+        display:
+          name: 5xx ratio
+          description: Share of site responses that were 5xx over the last 5 minutes.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 2
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 0.05
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/1",envoy_response_code_class="5"}[5m])) or vector(0)) / sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/1"}[5m]))
+    latencyP95:
+      kind: Panel
+      spec:
+        display:
+          name: Latency p95
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name="httproute/argus/argus/rule/1"}[5m]))) / 1000
+    heartbeatGeneral:
+      kind: Panel
+      spec:
+        display:
+          name: General worker
+          description: Seconds since the general worker reported in. Over 300 means the process stopped.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 300
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_workers_seconds_since_heartbeat{role="general"})
+    heartbeatScraper:
+      kind: Panel
+      spec:
+        display:
+          name: Scraper worker
+          description: Seconds since the scraper process reported in. Over 300 means the process stopped.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 300
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_workers_seconds_since_heartbeat{role="scraper"})
+    oldestDue:
+      kind: Panel
+      spec:
+        display:
+          name: Oldest due job
+          description: How long the oldest due job has waited. Over an hour the queue is stuck, though a scraper pause can hold scrape jobs legitimately.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 3600
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_jobs_oldest_due_seconds)
+    backupAge:
+      kind: Panel
+      spec:
+        display:
+          name: Since last backup
+          description: Read from the Barman Cloud plugin. cnpg_collector_last_available_backup_timestamp stays at 0 here and would look like a backup that never happened.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: hours
+              decimalPlaces: 1
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 48
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: (time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="argus"})) / 3600
+    requests:
+      kind: Panel
+      spec:
+        display:
+          name: Requests by status class
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+              label: req/s
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (envoy_response_code_class) (rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/1"}[$__rate_interval]))
+                  seriesNameFormat: '{{envoy_response_code_class}}xx'
+    latency:
+      kind: Panel
+      spec:
+        display:
+          name: Latency p95
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: seconds
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name="httproute/argus/argus/rule/1"}[$__rate_interval]))) / 1000
+                  seriesNameFormat: 'p95'
+    memoryShare:
+      kind: Panel
+      spec:
+        display:
+          name: Memory, share of limit
+          description: The scraper's iGPU buffers and /dev/shm count against its limit.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: percent-decimal
+              min: 0
+              max: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (container_memory_working_set_bytes{namespace="argus",pod=~"argus-.*",container="app"}) / sum by (pod) (kube_pod_container_resource_limits{namespace="argus",pod=~"argus-.*",container="app",resource="memory"})
+                  seriesNameFormat: '{{pod}}'
+    restarts:
+      kind: Panel
+      spec:
+        display:
+          name: Restarts, 1h
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace="argus",pod=~"argus-.*"}[1h]))
+                  seriesNameFormat: '{{pod}}'
+    warnings:
+      kind: Panel
+      spec:
+        display:
+          name: Warnings, 24h
+          description: Pages blocked or challenged in the last 24 hours.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#ffb300'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_scraper_warnings_24h)
+    lastPage:
+      kind: Panel
+      spec:
+        display:
+          name: Since last page
+          description: Pages only load inside the scrape window, 09:00 to midnight Rome, so a quiet night is normal.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_scraper_seconds_since_last_page)
+    cooldown:
+      kind: Panel
+      spec:
+        display:
+          name: Block cooldown left
+          description: Above zero, CM blocked the scraper and it is waiting this out.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_scraper_cooldown_seconds_left)
+    pages:
+      kind: Panel
+      spec:
+        display:
+          name: Pages by kind and status, last hour
+          description: A rolling one-hour count, so each point covers the hour before it. Series vanish when an hour had no such pages.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (kind, status) (cnpg_argus_scrape_pages_last_hour)
+                  seriesNameFormat: '{{kind}} {{status}}'
+    scraperMemory:
+      kind: Panel
+      spec:
+        display:
+          name: Scraper memory
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (container_memory_working_set_bytes{namespace="argus",pod=~"argus-scraper-.*",container="app"})
+                  seriesNameFormat: '{{pod}}'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(kube_pod_container_resource_limits{namespace="argus",pod=~"argus-scraper-.*",container="app",resource="memory"})
+                  seriesNameFormat: 'limit'
+    scraperNetwork:
+      kind: Panel
+      spec:
+        display:
+          name: Scraper network
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: bytes/sec
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(container_network_receive_bytes_total{namespace="argus",pod=~"argus-scraper-.*"}[$__rate_interval]))
+                  seriesNameFormat: 'in'
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(container_network_transmit_bytes_total{namespace="argus",pod=~"argus-scraper-.*"}[$__rate_interval]))
+                  seriesNameFormat: 'out'
+    trackedTargets:
+      kind: Panel
+      spec:
+        display:
+          name: Tracked targets
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_prices_tracked_targets)
+    pricedToday:
+      kind: Panel
+      spec:
+        display:
+          name: Priced today
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_prices_priced_today)
+    neverPriced:
+      kind: Panel
+      spec:
+        display:
+          name: Never priced
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_prices_never_priced)
+    stale:
+      kind: Panel
+      spec:
+        display:
+          name: Stale, 30d
+          description: Targets last priced over 30 days ago.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_prices_stale_30d)
+    noProduct:
+      kind: Panel
+      spec:
+        display:
+          name: Cards, no product
+          description: Held or wanted cards with no checked CM product.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_prices_tracked_cards_without_product)
+    inDoubt:
+      kind: Panel
+      spec:
+        display:
+          name: Variants in doubt
+          description: Card variants with no trusted CM product.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_catalog_variants_in_doubt)
+    guideAge:
+      kind: Panel
+      spec:
+        display:
+          name: Price guide age
+          description: Over two days, the price guide import stopped.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 172800
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_catalog_price_guide_age_seconds)
+    tcgdexAge:
+      kind: Panel
+      spec:
+        display:
+          name: TCGdex sync age
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_catalog_tcgdex_sync_age_seconds)
+    jobsDue:
+      kind: Panel
+      spec:
+        display:
+          name: Due jobs by kind
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (kind) (cnpg_argus_jobs_due)
+                  seriesNameFormat: '{{kind}}'
+    jobsFailed:
+      kind: Panel
+      spec:
+        display:
+          name: Failed jobs by kind, 24h
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (kind) (cnpg_argus_jobs_failed_24h)
+                  seriesNameFormat: '{{kind}}'
+    logs:
+      kind: Panel
+      spec:
+        display:
+          name: Errors and warnings by role, last hour
+          description: Series vanish when an hour had no such lines.
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+            visual:
+              stack: all
+              areaOpacity: 0.5
+              lineWidth: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max by (role, level) (cnpg_argus_logs_last_hour)
+                  seriesNameFormat: '{{role}} {{level}}'
+    accounts:
+      kind: Panel
+      spec:
+        display:
+          name: Accounts
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_users_total)
+    active:
+      kind: Panel
+      spec:
+        display:
+          name: Active, 24h
+          description: Accounts with session activity in the last 24 hours.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_users_active_24h)
+    invitesCreated:
+      kind: Panel
+      spec:
+        display:
+          name: Invites created, 24h
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_users_invites_created_24h)
+    invitesUsed:
+      kind: Panel
+      spec:
+        display:
+          name: Invites used, 24h
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_users_invites_used_24h)
+    invitesOpen:
+      kind: Panel
+      spec:
+        display:
+          name: Invites open
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_users_invites_open)
+    loginEmails:
+      kind: Panel
+      spec:
+        display:
+          name: Login emails, 1h
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_users_login_emails_1h)
+    holdings:
+      kind: Panel
+      spec:
+        display:
+          name: Holdings
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_portfolio_holdings)
+    value:
+      kind: Panel
+      spec:
+        display:
+          name: Total value, EUR
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+              shortValues: true
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_argus_portfolio_value_eur)
+    dbSize:
+      kind: Panel
+      spec:
+        display:
+          name: Database size
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: bytes
+              decimalPlaces: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_pg_database_size_bytes{namespace="argus",datname="argus"})
+    longestTx:
+      kind: Panel
+      spec:
+        display:
+          name: Longest transaction
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_backends_max_tx_duration_seconds{namespace="argus"})
+    replicationLag:
+      kind: Panel
+      spec:
+        display:
+          name: Replication lag
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: seconds
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: max(cnpg_pg_replication_lag{namespace="argus"})
+    cacheHit:
+      kind: Panel
+      spec:
+        display:
+          name: Cache hit ratio
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: percent-decimal
+              decimalPlaces: 1
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(rate(cnpg_pg_stat_database_blks_hit{namespace="argus",datname="argus"}[5m])) / (sum(rate(cnpg_pg_stat_database_blks_hit{namespace="argus",datname="argus"}[5m])) + sum(rate(cnpg_pg_stat_database_blks_read{namespace="argus",datname="argus"}[5m])))
+    walFailures:
+      kind: Panel
+      spec:
+        display:
+          name: WAL failures, 1h
+          description: Failed WAL archives. A demoted primary will not start until pending WAL reaches the object store.
+        plugin:
+          kind: StatChart
+          spec:
+            calculation: last-number
+            format:
+              unit: decimal
+              decimalPlaces: 0
+            thresholds:
+              defaultColor: '#43a047'
+              steps:
+                - value: 1
+                  color: '#e53935'
+            colorMode: background_solid
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum(increase(cnpg_pg_stat_archiver_failed_count{namespace="argus"}[1h]))
+    connections:
+      kind: Panel
+      spec:
+        display:
+          name: Connections
+        plugin:
+          kind: TimeSeriesChart
+          spec:
+            legend:
+              position: bottom
+              mode: list
+            yAxis:
+              format:
+                unit: decimal
+                decimalPlaces: 0
+              min: 0
+        queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  query: sum by (pod) (cnpg_backends_total{namespace="argus"})
+                  seriesNameFormat: '{{pod}}'
+  layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: Health at a glance
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/webReplicas'
+          - x: 4
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/errorRatio'
+          - x: 8
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/latencyP95'
+          - x: 12
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/heartbeatGeneral'
+          - x: 15
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/heartbeatScraper'
+          - x: 18
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/oldestDue'
+          - x: 21
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/backupAge'
+    - kind: Grid
+      spec:
+        display:
+          title: Site
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/requests'
+          - x: 12
+            "y": 0
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/latency'
+          - x: 0
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/memoryShare'
+          - x: 12
+            "y": 8
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/restarts'
+    - kind: Grid
+      spec:
+        display:
+          title: Scraper
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 4
+            content:
+              $ref: '#/spec/panels/warnings'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 4
+            content:
+              $ref: '#/spec/panels/lastPage'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 4
+            content:
+              $ref: '#/spec/panels/cooldown'
+          - x: 0
+            "y": 4
+            width: 12
+            height: 8
+            content:
+              $ref: '#/spec/panels/pages'
+          - x: 12
+            "y": 4
+            width: 6
+            height: 8
+            content:
+              $ref: '#/spec/panels/scraperMemory'
+          - x: 18
+            "y": 4
+            width: 6
+            height: 8
+            content:
+              $ref: '#/spec/panels/scraperNetwork'
+    - kind: Grid
+      spec:
+        display:
+          title: Prices and catalog
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/trackedTargets'
+          - x: 3
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/pricedToday'
+          - x: 6
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/neverPriced'
+          - x: 9
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/stale'
+          - x: 12
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/noProduct'
+          - x: 15
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/inDoubt'
+          - x: 18
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/guideAge'
+          - x: 21
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/tcgdexAge'
+    - kind: Grid
+      spec:
+        display:
+          title: Jobs and logs
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/jobsDue'
+          - x: 8
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/jobsFailed'
+          - x: 16
+            "y": 0
+            width: 8
+            height: 8
+            content:
+              $ref: '#/spec/panels/logs'
+    - kind: Grid
+      spec:
+        display:
+          title: Product
+          collapse:
+            open: true
+        items:
+          - x: 0
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/accounts'
+          - x: 3
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/active'
+          - x: 6
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/invitesCreated'
+          - x: 9
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/invitesUsed'
+          - x: 12
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/invitesOpen'
+          - x: 15
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/loginEmails'
+          - x: 18
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/holdings'
+          - x: 21
+            "y": 0
+            width: 3
+            height: 4
+            content:
+              $ref: '#/spec/panels/value'
+    - kind: Grid
+      spec:
+        display:
+          title: Database
+          collapse:
+            open: false
+        items:
+          - x: 0
+            "y": 0
+            width: 5
+            height: 4
+            content:
+              $ref: '#/spec/panels/dbSize'
+          - x: 5
+            "y": 0
+            width: 5
+            height: 4
+            content:
+              $ref: '#/spec/panels/longestTx'
+          - x: 10
+            "y": 0
+            width: 5
+            height: 4
+            content:
+              $ref: '#/spec/panels/replicationLag'
+          - x: 15
+            "y": 0
+            width: 5
+            height: 4
+            content:
+              $ref: '#/spec/panels/cacheHit'
+          - x: 20
+            "y": 0
+            width: 4
+            height: 4
+            content:
+              $ref: '#/spec/panels/walFailures'
+          - x: 0
+            "y": 4
+            width: 24
+            height: 6
+            content:
+              $ref: '#/spec/panels/connections'

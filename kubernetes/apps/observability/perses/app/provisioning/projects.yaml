@@ -4,6 +4,12 @@
 # a dashboard whose project does not exist.
 - kind: Project
   metadata:
+    name: argus
+  spec:
+    display:
+      name: argus
+- kind: Project
+  metadata:
     name: network
   spec:
     display:

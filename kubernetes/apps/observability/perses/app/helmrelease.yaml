@@ -101,6 +101,8 @@ spec:
             - configMap:
                 name: perses-provisioning
             - configMap:
+                name: perses-dashboards-argus
+            - configMap:
                 name: perses-dashboards-database
             - configMap:
                 name: perses-dashboards-flux-system

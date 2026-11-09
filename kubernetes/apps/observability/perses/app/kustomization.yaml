@@ -33,6 +33,9 @@ configMapGenerator:
     files:
       - globaldatasources.yaml=provisioning/globaldatasources.yaml
       - projects.yaml=provisioning/projects.yaml
+  - name: perses-dashboards-argus
+    files:
+      - argus-argus.yaml=provisioning/dashboards/argus/argus.yaml
   - name: perses-dashboards-database
     files:
       - database-postgres.yaml=provisioning/dashboards/database/postgres.yaml

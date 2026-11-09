@@ -38,6 +38,10 @@ spec:
         login: true
         passwordSecret:
           name: argus-scraper-db
+  monitoring:
+    customQueriesConfigMap:
+      - name: argus-metrics
+        key: queries.yaml
   resources:
     requests:
       cpu: 50m
