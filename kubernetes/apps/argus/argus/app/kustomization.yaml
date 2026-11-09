@@ -15,3 +15,5 @@ resources:
   - ./ghcr.sops.yaml
   - ./pvc.yaml
   - ./helmrelease.yaml
+  - ./pdb.yaml
+  - ./networkpolicy.yaml

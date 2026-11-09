@@ -13,6 +13,17 @@ spec:
       # Next.js app: UI, API routes, auth. Migrations run first as an init container, so a schema
       # change and the code that needs it always arrive together.
       web:
+        # Two, on different nodes, so a node reboot or upgrade does not take the site down.
+        replicas: 2
+        pod:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: argus
+                  app.kubernetes.io/controller: web
         annotations:
           reloader.stakater.com/auto: "true"
         initContainers:
@@ -39,6 +50,11 @@ spec:
             env:
               DATABASE_URL: *db-url
               BETTER_AUTH_URL: https://argus.${SECRET_DOMAIN}
+              SCRAPER_REMOTE_SECRET: &remote-secret
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-remote
+                    key: SCRAPER_REMOTE_SECRET
               OIDC_USER_GROUP: argus-users
               OIDC_ADMIN_GROUP: argus-admins
               OIDC_ISSUER_URL:
@@ -149,7 +165,14 @@ spec:
             args:
               - "scraper"
             env:
-              DATABASE_URL: *db-url
+              # Its own limited login and no other secret: this pod runs a browser on untrusted
+              # pages, so it must not hold anything that would reach users' data.
+              DATABASE_URL:
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-scraper
+                    key: DATABASE_URL
+              SCRAPER_REMOTE_SECRET: *remote-secret
               TZ: Europe/Rome
               APP_URL: https://argus.${SECRET_DOMAIN}
               # Pacing: see apps/worker/argus_worker/scraper/pacing.py. Challenges that do not clear
@@ -184,7 +207,6 @@ spec:
               # If `argus-worker browser-check` reports a software WebGL renderer (llvmpipe or
               # SwiftShader), route WebGL through the iGPU via Vulkan:
               # SCRAPE_CHROME_ARGS: "--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
-            envFrom: *worker-envfrom
             securityContext:
               allowPrivilegeEscalation: false
               # Chromium writes outside the mounted paths (crash reports, font caches).

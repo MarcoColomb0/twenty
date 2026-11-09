@@ -1,0 +1,12 @@
+---
+# Voluntary evictions (node drains, upgrades) leave at least one web pod serving.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: argus-web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argus
+      app.kubernetes.io/controller: web
