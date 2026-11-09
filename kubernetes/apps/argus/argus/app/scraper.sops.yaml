@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argus-scraper
+stringData:
+  DATABASE_URL: ENC[AES256_GCM,data:OXnSNLJ61iZgzzhY+CCpR9rRmqFw0wYodFtp0vdoPIu4cOusKe3ZXMYhV80ayyav4fMHjl4/AmmG2NlMQKfxCUslWlbUPnDWLpxwBolK0mlVAVPv0ium89inxaLkjcQMQo2UJCN4tyhrBPi/QfH0CaJ1BrCsX6vOBiwfYtSgLS2Uv+kce6nANhp/ULElYA==,iv:u0WgCxzr8+R/Yi0pEAwFbymhxlvaCPtT6C3DuaEEQg0=,tag:ZAbsG6Gzd3HCqS7TIiLz6g==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBVNHo5STFmSFNZTVQvUW1x
+        MGFsOEhBOUNDYmlwM0tzNkYzY0hoR1c2T3lnCnErK0ZxdGNNQjJEUU44YVdPbDRx
+        ditVN3loTWg1ZDg0RVFQU012SzJKdjQKLS0tIFdpblRIK1NxYm1IT0pjbnBaOFls
+        UDRhWkV3SXY0TFZENHlHWnk1bG9nblUKLAfd+zWVv0vY3Ad8nz/ETLwtlIK0Bh7S
+        qWtpaEaZHL2hLi7f+HC2K2m9bWCjv8rg07UDQTHzDF5ecKRB6B3yEw==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-11-09T21:16:53Z"
+  mac: ENC[AES256_GCM,data:ASAnoL6erSV+Nlis0jpAr144PMW2ACSSpBQgCJB9SvClVQeHZL3FTr65uL0TWUGT32WHS433bUUH6KIxeUy1PMa7XK6tCJfmitgfp19cMpyiFTln/ugI5osZ5g3PdrZ+ro1jCFEYMDoLavQ1c3apeJ8fDGk3yP7aISIwJ0EM+uE=,iv:4o07NiRq0XkQ+q3xH4Ao2JEUqBbhXDLOFHsOEFdlDZQ=,tag:PRohGRospwz7IZ9VKTs9ZQ==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

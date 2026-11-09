@@ -5,5 +5,6 @@ kind: Kustomization
 components:
   - ../../../../components/cnpg-backup
 resources:
+  - ./scraper-role.sops.yaml
   - ./cluster.yaml
   - ./podmonitor.yaml

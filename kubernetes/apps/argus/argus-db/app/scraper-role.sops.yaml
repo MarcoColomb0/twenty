@@ -1,0 +1,27 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argus-scraper-db
+  labels:
+    cnpg.io/reload: "true"
+type: kubernetes.io/basic-auth
+stringData:
+  username: ENC[AES256_GCM,data:4t883nWESPycDGL6Ow==,iv:ynPFSqmxICwvsWDPpa59Wpth/s+GN1yKziwv2PZfM50=,tag:HpB+vWe5SyyPuKUysfQFBg==,type:str]
+  password: ENC[AES256_GCM,data:UC6otf70PbILNWNeEXsbw91Jeeb7cuaXZtygPiSAyQGx8d5RZVtBIyJKUslamK4rJ8jU6Yx5l9ykjRvXr3oB6w==,iv:2N9QC+qYYLWt6Ywg+xLiXxJDIjJavBTNNcDlr9IeAXQ=,tag:DyEh6wulDxIS3t/vV6U87w==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBSZ2hOQUVXcnVHYzF3VW9U
+        S3o0bmZuc0lpZXJXWTAwUE1RbFZISUlNc2lBCjFwdmVURU9aRWljeHl4dFEySTF4
+        MlJOYWhaVUppd01wRFM3TmhHWC9xbHMKLS0tIDI2b0dZYlg5VWNkKzF6UGFhV3FK
+        L0pFcTBtN2RJZEhrYmJXWlQxVFgvL0kKT/S3eaxtmetjU30YJKNtROR+dQlysuX8
+        CUVRogRW6T5gk17bbmyl/qkJRBTLUKJCL5Q/CQaiDvCDYJUK9Ks4rw==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-11-09T21:16:53Z"
+  mac: ENC[AES256_GCM,data:dQ6Up5//PXRR7WaP0AHEltVruhoCTJNURpDGm2agle3Q12NNlU7FbP5Ynksqnumx1HF9weCqiW3ddtwvYMzstWrMwb3om46/Z/H0vsP9Esc99uYKsdihu7yuKuTfR8BiSyfzg6Xbhcj5rK9wwO4UevTljDX8MduWd8HxSr0Yw1c=,iv:5F4Xe9zmgBdWUX/AX30MuwGUvEdqdBRW0r1HWcaI7H4=,tag:rq36tzreN+/uYCcH2qn87g==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3

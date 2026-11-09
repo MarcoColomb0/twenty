@@ -29,6 +29,15 @@ spec:
       # so the argus role stays unprivileged.
       postInitApplicationSQL:
         - CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  # The scraper runs a browser on untrusted pages, so it gets its own login. What it may touch is
+  # granted by the app's migrations (apps/web/scripts/scraper-grants.sql).
+  managed:
+    roles:
+      - name: argus_scraper
+        ensure: present
+        login: true
+        passwordSecret:
+          name: argus-scraper-db
   resources:
     requests:
       cpu: 50m

@@ -10,6 +10,8 @@ resources:
   - ./ocirepository.yaml
   - ./oidcclient.yaml
   - ./secret.sops.yaml
+  - ./scraper.sops.yaml
+  - ./remote.sops.yaml
   - ./ghcr.sops.yaml
   - ./pvc.yaml
   - ./helmrelease.yaml

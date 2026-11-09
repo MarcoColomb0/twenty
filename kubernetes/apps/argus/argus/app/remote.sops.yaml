@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argus-remote
+stringData:
+  SCRAPER_REMOTE_SECRET: ENC[AES256_GCM,data:W1fErPJU45/apHrWt6cQP1N4y9hGqBqDYTdqCFtCLuy9RP67GkG1e2Zcygmdbff+4bVWYelKNy2Z5UKxiJjCBQ==,iv:fePjVqULsCdmTD3Xxd4S87e4N+BGfH9ZvI8dlG7eFJk=,tag:BuUIFVlJILKpH4uhXNAvvg==,type:str]
+sops:
+  age:
+    - enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBlK01yVmZXYk5ESkpZN2pQ
+        T3M1dlY4S000elA3c2tQODR6Y3BhMjhHS0IwCjRmaVlQZWdjcWFKMHJzbjl4MUhi
+        c25qWkhId21uY0lldG9TRDBBNzllUVUKLS0tIDBDOHBnQlJ5QUNySjRJaUt0WHFW
+        TnRZWkhwaVQ1YW5rSEVVZ0FuaXZtRHcKZvt5bx10lUiG0dp+lU5iRkmrL2xv7OFL
+        7dWOsHK0nGSGuV7MSiUjg7IO/GiAeJV4JCDgq3g+H9gjrgvy+Cpe4w==
+        -----END AGE ENCRYPTED FILE-----
+      recipient: age1txcyeza70lxefaz3m45jxyf074czteej3z843js7z9fh8ndv5pxqll2tex
+  encrypted_regex: ^(data|stringData)$
+  lastmodified: "2026-11-09T21:16:53Z"
+  mac: ENC[AES256_GCM,data:uJt9wZVo8ZrGVETYrdAg3GYVeNjYl8YKqhE0IS3b4M17Y4mGTX5n/uIdVbDC+35pLyGOYV4ibgETIl7GHcO0vEeGFA5OLQRuqiqDmW6xNac2KYTmcubg3DLse/eEIWp7jkk5R0llv4eL+07FdZ+g1GmpaKykJViv6t7zoCm18IY=,iv:OwAe9r4X8e3ZSCFvwAV8QQoxKey7vugXvHpqPIUrncc=,tag:IHSp0d9OORTGU8tB92iXsg==,type:str]
+  mac_only_encrypted: true
+  version: 3.13.3
