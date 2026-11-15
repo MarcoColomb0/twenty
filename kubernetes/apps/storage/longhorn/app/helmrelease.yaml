@@ -46,7 +46,20 @@ spec:
       # asus01, 22 on hp01, 0 on lp01. least-effort only rebalances under
       # pressure, so every volume kept both copies on the same two nodes and
       # draining either one dropped the lot to a single replica.
+      #
+      # best-effort did not fix that: it balances each volume on its own, and a
+      # volume with its two replicas on two different nodes is already balanced
+      # by that measure. Nothing in Longhorn evens out replica counts across
+      # nodes; replicaReplenishmentWaitInterval below is what stops the skew.
       replicaAutoBalance: best-effort
+      # How long a failed replica is waited for before Longhorn rebuilds it on
+      # another node. At the default 600s any reboot longer than ten minutes
+      # moved every attached volume off the rebooted node for good -- lp01 was
+      # down 18 minutes on 2026-11-14 and came back holding only detached
+      # VolSync caches, 12 replicas against 45 and 43. Waiting past a reboot
+      # lets the node's own replicas resync in place instead. The cost is a
+      # node that really dies leaves volumes single-replica for 30 minutes.
+      replicaReplenishmentWaitInterval: 1800
     persistence:
       defaultClass: true
       defaultClassReplicaCount: 2
