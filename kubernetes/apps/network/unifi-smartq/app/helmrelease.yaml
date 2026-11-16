@@ -1,0 +1,116 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: unifi-smartq
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: unifi-smartq
+  interval: 1h
+  values:
+    controllers:
+      unifi-smartq:
+        type: cronjob
+        cronjob:
+          schedule: "*/5 * * * *"
+          concurrencyPolicy: Forbid
+          successfulJobsHistory: 1
+          failedJobsHistory: 1
+          backoffLimit: 0
+        containers:
+          app:
+            image:
+              repository: docker.io/library/python
+              tag: 3.14.9-alpine3.24
+            command:
+              - "python"
+              - "/app/smartq.py"
+            env:
+              UNIFI_URL: https://192.168.100.1
+              PYTHONDONTWRITEBYTECODE: "1"
+            # UNIFI_API_KEY: a local key from the console, Network -> Settings
+            # -> Control Plane -> Integrations. Unlike unpoller's, it has to
+            # come from an admin, because this one writes.
+            # CLIENT_MAC: Smart Queues follows this client, on while it is
+            # connected and off otherwise. Kept in the Secret so the repo does
+            # not publish a hardware address.
+            envFrom:
+              - secretRef:
+                  name: unifi-smartq-secret
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 64Mi
+
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+
+    configMaps:
+      script:
+        data:
+          smartq.py: |
+            import json
+            import os
+            import ssl
+            import urllib.error
+            import urllib.request
+
+            BASE = os.environ["UNIFI_URL"] + "/proxy/network/api/s/default"
+            MAC = os.environ["CLIENT_MAC"].lower()
+            # The console serves a self-signed certificate.
+            CTX = ssl._create_unverified_context()
+
+            def call(method, path, body=None):
+                req = urllib.request.Request(
+                    BASE + path,
+                    method=method,
+                    data=json.dumps(body).encode() if body is not None else None,
+                    headers={
+                        "X-API-KEY": os.environ["UNIFI_API_KEY"],
+                        "Content-Type": "application/json",
+                    },
+                )
+                with urllib.request.urlopen(req, context=CTX, timeout=30) as resp:
+                    return json.load(resp)
+
+            def online():
+                try:
+                    return bool(call("GET", "/stat/sta/" + MAC)["data"])
+                except urllib.error.HTTPError as e:
+                    # A client that is not connected is a 400 with this
+                    # message. Every other error raises, so an expired key or
+                    # an unreachable console changes nothing rather than
+                    # reading as "offline" and switching Smart Queues off.
+                    if e.code == 400 and json.load(e)["meta"].get("msg") == "api.err.UnknownStation":
+                        return False
+                    raise
+
+            want = online()
+            wans = [n for n in call("GET", "/rest/networkconf")["data"] if n.get("purpose") == "wan"]
+            if len(wans) != 1:
+                raise SystemExit(f"expected one WAN, found {len(wans)}")
+            wan = wans[0]
+
+            # Every write reprovisions the gateway's WAN, a short outage, so
+            # only write on a change.
+            if wan.get("wan_smartq_enabled") == want:
+                print(f"client online={want}, smart queues already {want}")
+            else:
+                call("PUT", "/rest/networkconf/" + wan["_id"], {"wan_smartq_enabled": want})
+                print(f"client online={want}, smart queues set to {want}")
+
+    persistence:
+      script:
+        type: configMap
+        identifier: script
+        globalMounts:
+          - path: /app
