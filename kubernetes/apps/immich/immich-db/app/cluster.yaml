@@ -6,6 +6,10 @@ metadata:
   name: postgres-immich
 spec:
   instances: 2
+  # The default, restart, restarts the primary in place on any pod spec change
+  # -- a barman plugin bump took every database offline for ~2 minutes at once.
+  # Switchover promotes the already-updated replica first: seconds, not minutes.
+  primaryUpdateMethod: switchover
   # Immich needs VectorChord for smart search and face embeddings; the stock
   # CloudNativePG image does not ship it. Postgres 18 here matches the other
   # clusters, which run 18.4.

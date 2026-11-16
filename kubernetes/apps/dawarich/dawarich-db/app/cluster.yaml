@@ -6,6 +6,10 @@ metadata:
   name: postgres-dawarich
 spec:
   instances: 2
+  # The default, restart, restarts the primary in place on any pod spec change
+  # -- a barman plugin bump took every database offline for ~2 minutes at once.
+  # Switchover promotes the already-updated replica first: seconds, not minutes.
+  primaryUpdateMethod: switchover
   # PostGIS, not the stock image. Dawarich's schema declares it outright --
   #   enable_extension "postgis"
   # -- so this is not optional: on the default image every migration fails at

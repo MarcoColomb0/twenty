@@ -6,6 +6,10 @@ metadata:
   name: postgres-vaultwarden
 spec:
   instances: 2
+  # The default, restart, restarts the primary in place on any pod spec change
+  # -- a barman plugin bump took every database offline for ~2 minutes at once.
+  # Switchover promotes the already-updated replica first: seconds, not minutes.
+  primaryUpdateMethod: switchover
   # A database that fills its volume stops accepting writes, which is the
   # failure pvc-autoresizer exists to prevent -- and unlike the app volumes,
   # these grow on their own without anyone touching them. Currently 0.72G of

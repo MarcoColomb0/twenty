@@ -6,6 +6,10 @@ metadata:
   name: postgres-oxicloud
 spec:
   instances: 2
+  # The default, restart, restarts the primary in place on any pod spec change
+  # -- a barman plugin bump took every database offline for ~2 minutes at once.
+  # Switchover promotes the already-updated replica first: seconds, not minutes.
+  primaryUpdateMethod: switchover
   # File and folder metadata, users, shares, calendars and contacts. The file
   # bytes themselves live on the PVC, not here.
   inheritedMetadata:
