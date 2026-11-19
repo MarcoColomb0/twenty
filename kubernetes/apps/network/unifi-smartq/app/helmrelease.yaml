@@ -22,7 +22,7 @@ spec:
           app:
             image:
               repository: docker.io/library/python
-              tag: 3.14.9-alpine3.24
+              tag: 3.15.2-alpine3.24
             command:
               - "python"
               - "/app/smartq.py"
