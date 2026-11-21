@@ -157,6 +157,7 @@ spec:
               fallbackUpstream: false
               mapping:
                 ${SECRET_DOMAIN}: 192.168.100.103
+                ${SAAS_SECRET_DOMAIN}: 192.168.100.103
 
             blocking:
               denylists:

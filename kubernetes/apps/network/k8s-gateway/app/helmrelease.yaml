@@ -62,7 +62,7 @@ spec:
           # tunnel target, or the ACME challenge TXT. Without fallthrough those
           # would come back NXDOMAIN instead of their real answer.
           - name: k8s_gateway
-            parameters: "${SECRET_DOMAIN}"
+            parameters: "${SECRET_DOMAIN} ${SAAS_SECRET_DOMAIN}"
             configBlock: |-
               ttl 1
               resources HTTPRoute Service
