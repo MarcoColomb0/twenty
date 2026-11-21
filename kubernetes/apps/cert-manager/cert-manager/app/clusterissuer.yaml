@@ -32,3 +32,4 @@ spec:
         selector:
           dnsZones:
             - "${SECRET_DOMAIN}"
+            - "${SAAS_SECRET_DOMAIN}"

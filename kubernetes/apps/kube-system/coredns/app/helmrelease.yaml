@@ -29,6 +29,9 @@ spec:
           - zone: ${SECRET_DOMAIN}
             scheme: dns://
             use_tcp: true
+          - zone: ${SAAS_SECRET_DOMAIN}
+            scheme: dns://
+            use_tcp: true
         port: 53
         plugins:
           - name: errors

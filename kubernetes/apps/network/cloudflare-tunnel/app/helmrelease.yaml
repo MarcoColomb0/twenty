@@ -90,6 +90,21 @@ spec:
                   http2Origin: true
                   originServerName: external.${SECRET_DOMAIN}
                 service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
+              # The SaaS domain rides the same tunnel. Its DNS records are
+              # CNAMEs to external.${SECRET_DOMAIN} -- external-dns takes the
+              # target from the Gateway, not the route -- so only this ingress
+              # and the SNI below tell the two apart. The apex is listed on its
+              # own because a wildcard does not match it.
+              - hostname: "${SAAS_SECRET_DOMAIN}"
+                originRequest:
+                  http2Origin: true
+                  originServerName: external.${SAAS_SECRET_DOMAIN}
+                service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
+              - hostname: "*.${SAAS_SECRET_DOMAIN}"
+                originRequest:
+                  http2Origin: true
+                  originServerName: external.${SAAS_SECRET_DOMAIN}
+                service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
               - service: http_status:404
     persistence:
       config-file:
