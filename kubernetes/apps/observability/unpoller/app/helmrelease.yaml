@@ -17,7 +17,7 @@ spec:
           app:
             image:
               repository: ghcr.io/unpoller/unpoller
-              tag: v5.9.5
+              tag: v5.9.6
             env:
               # The UniFi Express 7 is the console: it runs UniFi Network
               # itself, so this polls it on the LAN rather than through Site
