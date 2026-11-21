@@ -52,43 +52,36 @@ backend = "aqua:cloudflare/cloudflared"
 
 [tools.cloudflared."platforms.linux-arm64"]
 checksum = "sha256:3df43aedc9ff291d1735b5cb576cb97e0b157488796db2e32b28aecabb445775"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-linux-arm64"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692818763"
 
 [tools.cloudflared."platforms.linux-arm64-musl"]
 checksum = "sha256:3df43aedc9ff291d1735b5cb576cb97e0b157488796db2e32b28aecabb445775"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-linux-arm64"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692818763"
 
 [tools.cloudflared."platforms.linux-x64"]
 checksum = "sha256:1f99fb518b83dec2ba8d870a7cc991d82a77e6196295a3d2754ba17ab9f91872"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-linux-amd64"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692817008"
 
 [tools.cloudflared."platforms.linux-x64-musl"]
 checksum = "sha256:1f99fb518b83dec2ba8d870a7cc991d82a77e6196295a3d2754ba17ab9f91872"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-linux-amd64"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692817008"
 
 [tools.cloudflared."platforms.macos-arm64"]
 checksum = "sha256:3586ccf397e98e5f437e60e7c307ca6ac463e110580503af8bb8e6f9ebf831bd"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-darwin-arm64.tgz"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692819281"
 
 [tools.cloudflared."platforms.macos-x64"]
 checksum = "sha256:02f3edfd87684dd5b705607688e4eb4b323f6e777b81e7b3a85af556aa356848"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-darwin-amd64.tgz"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692819049"
 
 [tools.cloudflared."platforms.windows-x64"]
 checksum = "sha256:2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343"
-checksum_source = "mise-versions"
 url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.7/cloudflared-windows-amd64.exe"
 url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/692820426"
 
@@ -137,43 +130,39 @@ backend = "aqua:fluxcd/flux2"
 
 [tools.flux2."platforms.linux-arm64"]
 checksum = "sha256:c3c435052e5e18156858bc73f26bcadb62821a6e30951b4b302beb4e65a532c2"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_arm64.tar.gz"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609576"
 
 [tools.flux2."platforms.linux-arm64-musl"]
 checksum = "sha256:c3c435052e5e18156858bc73f26bcadb62821a6e30951b4b302beb4e65a532c2"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_arm64.tar.gz"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609576"
 
 [tools.flux2."platforms.linux-x64"]
 checksum = "sha256:208dd7012c04fedeed5b2d0b6e63df3b15b1c34a381527811685c098bc9f8659"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_amd64.tar.gz"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609567"
 
 [tools.flux2."platforms.linux-x64-musl"]
 checksum = "sha256:208dd7012c04fedeed5b2d0b6e63df3b15b1c34a381527811685c098bc9f8659"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_amd64.tar.gz"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609567"
 
 [tools.flux2."platforms.macos-arm64"]
 checksum = "sha256:339c5dba218e2b0a04a0841d1dace6c00d65736dc3286038463fa86754ff6c53"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_darwin_arm64.tar.gz"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609572"
 
+[tools.flux2."platforms.macos-arm64".provenance.slsa]
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/provenance.intoto.jsonl"
+
 [tools.flux2."platforms.macos-x64"]
 checksum = "sha256:23fc019f5b682c1ff6841a2ce06798b3c8e17452998cb9c2dd57a6440e6340ff"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_darwin_amd64.tar.gz"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609570"
 
 [tools.flux2."platforms.windows-x64"]
 checksum = "sha256:750250d4dcc828c395d7edaf72c1787d34af697fc3d7bc310d32955a5269823d"
-checksum_source = "mise-versions"
 url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_windows_amd64.zip"
 url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609573"
 
@@ -587,37 +576,31 @@ backend = "aqua:pypa/pipx"
 
 [tools.pipx."platforms.linux-arm64"]
 checksum = "sha256:542fbe91c994c12cf763e91cbb653501c1013a499a8cb2155db1556d40b07074"
-checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.13/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/708316313"
 
 [tools.pipx."platforms.linux-arm64-musl"]
 checksum = "sha256:542fbe91c994c12cf763e91cbb653501c1013a499a8cb2155db1556d40b07074"
-checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.13/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/708316313"
 
 [tools.pipx."platforms.linux-x64"]
 checksum = "sha256:542fbe91c994c12cf763e91cbb653501c1013a499a8cb2155db1556d40b07074"
-checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.13/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/708316313"
 
 [tools.pipx."platforms.linux-x64-musl"]
 checksum = "sha256:542fbe91c994c12cf763e91cbb653501c1013a499a8cb2155db1556d40b07074"
-checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.13/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/708316313"
 
 [tools.pipx."platforms.macos-arm64"]
 checksum = "sha256:542fbe91c994c12cf763e91cbb653501c1013a499a8cb2155db1556d40b07074"
-checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.13/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/708316313"
 
 [tools.pipx."platforms.macos-x64"]
 checksum = "sha256:542fbe91c994c12cf763e91cbb653501c1013a499a8cb2155db1556d40b07074"
-checksum_source = "mise-versions"
 url = "https://github.com/pypa/pipx/releases/download/1.18.13/pipx.pyz"
 url_api = "https://api.github.com/repos/pypa/pipx/releases/assets/708316313"
 
