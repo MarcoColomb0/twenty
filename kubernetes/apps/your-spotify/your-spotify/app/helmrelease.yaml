@@ -16,11 +16,19 @@ spec:
       server:
         annotations:
           reloader.stakater.com/auto: "true"
+        # The imports PVC is ReadWriteOnce, so a surge pod could not mount it.
+        strategy: Recreate
+        pod:
+          # The fork's server runs as uid 1000 (node) instead of root; fsGroup
+          # makes the imports volume writable by it.
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
         containers:
           app:
             image:
-              repository: ghcr.io/yooooomi/your_spotify_server
-              tag: "1.20.0"
+              repository: ghcr.io/thetastyhanuta/your_spotify_server
+              tag: "1.20.1-fork.9"
             env:
               TZ: &tz Europe/Rome
               # The server reads TIMEZONE, not TZ, for bucketing listens into
@@ -69,8 +77,8 @@ spec:
         containers:
           app:
             image:
-              repository: ghcr.io/yooooomi/your_spotify_client
-              tag: "1.20.0"
+              repository: ghcr.io/thetastyhanuta/your_spotify_client
+              tag: "1.20.1-fork.9"
             env:
               TZ: *tz
               # Baked into the served bundle at container start, so the browser
@@ -162,6 +170,14 @@ spec:
           mongodb:
             app:
               - path: /data/db
+      imports:
+        existingClaim: your-spotify-imports
+        advancedMounts:
+          server:
+            app:
+              # Uploaded history files. Kept across restarts so a paused or
+              # failed import can resume instead of losing its files.
+              - path: /tmp/imports
     service:
       server:
         controller: server
