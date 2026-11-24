@@ -13,13 +13,18 @@ spec:
     # enforced anywhere on the external gateway while requests kept succeeding --
     # the same fail-open shape as the AppSec outage, and just as invisible.
     replicaCount: 2
-    topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: envoy-proxy-bouncer
+    # The chart has no topologySpreadConstraints value and silently drops one;
+    # affinity is what it renders. Preferred rather than required so a rolling
+    # update's surge pod can still land while a node is drained.
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: envoy-proxy-bouncer
     config:
       server:
         grpcPort: 8080
