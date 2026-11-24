@@ -1,0 +1,17 @@
+---
+# Stand-ins for SOPS Secrets that feed postBuild substitution. flate cannot
+# decrypt them, so their keys substitute to empty and charts with strict schemas
+# reject the render. Passed with --supply, which shadows the encrypted Secret.
+# Placeholder values only: these never reach the cluster.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pz8-vars
+  namespace: pz8
+stringData:
+  PZ8_IMAGE: registry.invalid/placeholder
+  PZ8_TAG: 0.0.0
+  PZ8PRX_IMAGE: registry.invalid/placeholder
+  PZ8PRX_TAG: 0.0.0
+  LSP_IMAGE: registry.invalid/placeholder
+  LSP_TAG: 0.0.0
