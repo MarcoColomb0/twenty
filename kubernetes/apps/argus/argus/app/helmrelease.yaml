@@ -30,7 +30,7 @@ spec:
           migrate:
             image: &web-image
               repository: ghcr.io/marcocolomb0/argus-web
-              tag: 0.27.0
+              tag: 0.28.0
             command:
               - "node"
               - "/migrate/scripts/migrate.mjs"
@@ -91,7 +91,7 @@ spec:
           app:
             image: &worker-image
               repository: ghcr.io/marcocolomb0/argus-worker
-              tag: 0.27.0
+              tag: 0.28.0
             args:
               - "general"
             env:
