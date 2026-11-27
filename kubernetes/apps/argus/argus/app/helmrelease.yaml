@@ -55,43 +55,6 @@ spec:
                   secretKeyRef:
                     name: argus-remote
                     key: SCRAPER_REMOTE_SECRET
-              OIDC_USER_GROUP: argus-users
-              OIDC_ADMIN_GROUP: argus-admins
-              OIDC_ISSUER_URL:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: issuer_url
-              OIDC_CLIENT_ID:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: client_id
-              OIDC_CLIENT_SECRET:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: client_secret
-              OIDC_AUTHORIZATION_URL:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: authorization_url
-              OIDC_TOKEN_URL:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: token_url
-              OIDC_USERINFO_URL:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: userinfo_url
-              OIDC_END_SESSION_URL:
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-oidc
-                    key: end_session_url
             envFrom:
               - secretRef:
                   name: argus-secret
@@ -288,8 +251,7 @@ spec:
           # and Postgres both do, which is the thing worth alerting on.
           gatus.home-operations.com/endpoint: |
             path: /api/health
-        # Published like the other Pocket ID-gated apps: the PWA has to work away from home,
-        # and web push needs a public https origin.
+        # Public: the PWA has to work away from home, and web push needs a public https origin.
         hostnames:
           - "argus.${SECRET_DOMAIN}"
         parentRefs:
