@@ -8,7 +8,6 @@ components:
 
 resources:
   - ./ocirepository.yaml
-  - ./oidcclient.yaml
   - ./secret.sops.yaml
   - ./scraper.sops.yaml
   - ./remote.sops.yaml
