@@ -76,6 +76,30 @@ spec:
         - port: 3000
           protocol: TCP
 ---
+# The admin panel is only reached through the internal gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: argus-panel
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argus
+      app.kubernetes.io/controller: panel
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: network
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: envoy-internal
+      ports:
+        - port: 3000
+          protocol: TCP
+---
 # Nothing calls the general worker.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -90,7 +114,8 @@ spec:
     - Ingress
 ---
 # The scraper's browser loads untrusted pages. It may reach the internet, its database and DNS;
-# nothing else on the cluster or the LAN. Only the gateway reaches it, for remote control.
+# nothing else on the cluster or the LAN. Only the internal gateway reaches it, for remote control
+# from the panel's host.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -110,7 +135,7 @@ spec:
               kubernetes.io/metadata.name: network
           podSelector:
             matchLabels:
-              gateway.envoyproxy.io/owning-gateway-name: envoy-external
+              gateway.envoyproxy.io/owning-gateway-name: envoy-internal
       ports:
         - port: 5800
           protocol: TCP

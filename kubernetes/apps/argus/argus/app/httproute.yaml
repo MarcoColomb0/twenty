@@ -1,10 +1,11 @@
 ---
+# Routes kept outside the chart: a second chart route would rename the main one from `argus` to
+# `argus-app`, which the Perses dashboard queries by name. The backends are chart-generated
+# Services, <release>-<serviceKey>, a naming that holds while the chart renders more than one.
+#
 # The old host, kept until old installs have moved over: pages go to the new origin with a 308,
 # /api/* is still served here so existing sessions keep working. Remove after 2026-12-11.
-#
-# Outside the chart for two reasons: app-template's schema allows only 301/302 for a redirect,
-# and a second chart route would rename the main one from `argus` to `argus-app`, which the
-# Perses dashboard queries by name.
+# A 308 needs a plain manifest anyway: app-template's schema allows only 301/302.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -26,8 +27,6 @@ spec:
             type: PathPrefix
             value: /api
       backendRefs:
-        # Chart-generated name, <release>-<serviceKey>: it holds while the chart renders two
-        # services (app, remote).
         - name: argus-app
           port: 3000
     - matches:
@@ -40,3 +39,34 @@ spec:
             scheme: https
             hostname: "app.${SAAS_SECRET_DOMAIN}"
             statusCode: 308
+---
+# The admin panel, home network and tailnet only. envoy-internal is not behind the WAF and has no
+# public DNS: external-dns publishes envoy-external's routes alone, and k8s-gateway answers this
+# name on the LAN.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argus-panel
+  annotations:
+    gatus.home-operations.com/endpoint: |
+      path: /api/health
+spec:
+  hostnames:
+    - "panel.${SAAS_SECRET_DOMAIN}"
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    # Remote control (WebSocket). The scraper accepts only a one-minute token the panel mints for
+    # admins, and runs VNC only while someone is connected.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /vnc
+      backendRefs:
+        - name: argus-remote
+          port: 5800
+    - backendRefs:
+        - name: argus-panel
+          port: 3000

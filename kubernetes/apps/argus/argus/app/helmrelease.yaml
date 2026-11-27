@@ -52,11 +52,6 @@ spec:
               # The public origin, also on the worker and scraper. The old host is redirected by
               # httproute.yaml.
               BETTER_AUTH_URL: &app-url https://app.${SAAS_SECRET_DOMAIN}
-              SCRAPER_REMOTE_SECRET: &remote-secret
-                valueFrom:
-                  secretKeyRef:
-                    name: argus-remote
-                    key: SCRAPER_REMOTE_SECRET
             envFrom:
               - secretRef:
                   name: argus-secret
@@ -82,6 +77,45 @@ spec:
                 cpu: 20m
               limits:
                 memory: 768Mi
+
+      # Admin panel: the same web code built without the public pages (ARGUS_APP=panel), on its own
+      # host and reachable only from the LAN (httproute.yaml). No migrate init container: web runs
+      # the migrations for both.
+      panel:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            # Keep repository and tag on adjacent lines: argus's release workflow bumps the tag by
+            # matching this shape.
+            image:
+              repository: ghcr.io/marcocolomb0/argus-panel
+              tag: 0.29.0
+            env:
+              DATABASE_URL: *db-url
+              # Its own origin. The session cookie is host-only, so signing in to the panel is
+              # separate from the app.
+              BETTER_AUTH_URL: https://panel.${SAAS_SECRET_DOMAIN}
+              # Mints the one-minute token the scraper's remote control accepts. The public app
+              # does not take it.
+              SCRAPER_REMOTE_SECRET: &remote-secret
+                valueFrom:
+                  secretKeyRef:
+                    name: argus-remote
+                    key: SCRAPER_REMOTE_SECRET
+            envFrom:
+              - secretRef:
+                  name: argus-secret
+            probes:
+              liveness: *web-probes
+              readiness: *web-probes
+            securityContext: *restricted
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                # First guess, ~3x web's steady ~110Mi: one admin at a time.
+                memory: 384Mi
 
       # Catalog sync, CardMarket price guide, snapshots, alerts, embeddings, and the scheduler
       # that queues the nightly scrape. One replica: the scheduler is idempotent, not leader-elected.
@@ -210,7 +244,10 @@ spec:
         advancedMounts:
           web:
             app:
-              - path: /app/apps/web/.next/cache
+              - path: &next-cache /app/apps/web/.next/cache
+          panel:
+            app:
+              - path: *next-cache
       tmp:
         type: emptyDir
         globalMounts:
@@ -237,14 +274,18 @@ spec:
         ports:
           http:
             port: *web-port
-      # The scraper's remote control: a WebSocket bridge to VNC on its browser display (Argus
-      # v0.11.0). The deploy job only bumps image tags, so this and the /vnc route below were
-      # missing and "Take control" hung on "loading browser".
+      panel:
+        controller: panel
+        ports:
+          http:
+            port: *web-port
+      # The scraper's remote control: a WebSocket bridge to VNC on its browser display. Reached at
+      # /vnc on the panel's host (httproute.yaml), never from the public gateway.
       remote:
         controller: scraper
         ports:
           http:
-            port: &remote-port 5800
+            port: 5800
 
     route:
       app:
@@ -260,16 +301,8 @@ spec:
           - name: envoy-external
             namespace: network
             sectionName: https
+        # /vnc is on the panel's host only (httproute.yaml); the public app answers 404 there.
         rules:
-          # The scraper accepts only a one-minute token the web app mints for admins, and runs
-          # VNC only while someone is connected.
-          - matches:
-              - path:
-                  type: PathPrefix
-                  value: /vnc
-            backendRefs:
-              - identifier: remote
-                port: *remote-port
           - backendRefs:
               - identifier: app
                 port: *web-port
