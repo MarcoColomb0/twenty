@@ -14,5 +14,6 @@ resources:
   - ./ghcr.sops.yaml
   - ./pvc.yaml
   - ./helmrelease.yaml
+  - ./httproute.yaml
   - ./pdb.yaml
   - ./networkpolicy.yaml

@@ -1,0 +1,42 @@
+---
+# The old host, kept until old installs have moved over: pages go to the new origin with a 308,
+# /api/* is still served here so existing sessions keep working. Remove after 2026-12-11.
+#
+# Outside the chart for two reasons: app-template's schema allows only 301/302 for a redirect,
+# and a second chart route would rename the main one from `argus` to `argus-app`, which the
+# Perses dashboard queries by name.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argus-legacy
+  annotations:
+    # Watch the half that still serves; / answers 308 and would read as down.
+    gatus.home-operations.com/endpoint: |
+      path: /api/health
+spec:
+  hostnames:
+    - "argus.${SECRET_DOMAIN}"
+  parentRefs:
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        # Chart-generated name, <release>-<serviceKey>: it holds while the chart renders two
+        # services (app, remote).
+        - name: argus-app
+          port: 3000
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            hostname: "app.${SAAS_SECRET_DOMAIN}"
+            statusCode: 308
