@@ -7,7 +7,7 @@
 #     cnpg_collector_last_collection_error is 1.
 #   - Those queries run on the primary only and a failover changes the pod
 #     label, so every panel takes max() rather than matching a pod.
-#   - httproute/argus/argus/rule/1 is the site; rule/0 is /vnc remote control.
+#   - httproute/argus/argus/rule/0 is the site, its only rule; /vnc is on the panel host.
 #   - Grid is 24 columns wide.
 kind: Dashboard
 metadata:
@@ -73,7 +73,7 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: (sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/1",envoy_response_code_class="5"}[5m])) or vector(0)) / sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/1"}[5m]))
+                  query: (sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/0",envoy_response_code_class="5"}[5m])) or vector(0)) / sum(rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/0"}[5m]))
     latencyP95:
       kind: Panel
       spec:
@@ -91,7 +91,7 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name="httproute/argus/argus/rule/1"}[5m]))) / 1000
+                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name="httproute/argus/argus/rule/0"}[5m]))) / 1000
     heartbeatGeneral:
       kind: Panel
       spec:
@@ -221,7 +221,7 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: sum by (envoy_response_code_class) (rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/1"}[$__rate_interval]))
+                  query: sum by (envoy_response_code_class) (rate(envoy_cluster_upstream_rq_xx{envoy_cluster_name="httproute/argus/argus/rule/0"}[$__rate_interval]))
                   seriesNameFormat: '{{envoy_response_code_class}}xx'
     latency:
       kind: Panel
@@ -244,7 +244,7 @@ spec:
               plugin:
                 kind: PrometheusTimeSeriesQuery
                 spec:
-                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name="httproute/argus/argus/rule/1"}[$__rate_interval]))) / 1000
+                  query: histogram_quantile(0.95, sum by (le) (rate(envoy_cluster_upstream_rq_time_bucket{envoy_cluster_name="httproute/argus/argus/rule/0"}[$__rate_interval]))) / 1000
                   seriesNameFormat: 'p95'
     memoryShare:
       kind: Panel
