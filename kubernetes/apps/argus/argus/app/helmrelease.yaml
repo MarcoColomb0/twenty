@@ -49,7 +49,9 @@ spec:
             image: *web-image
             env:
               DATABASE_URL: *db-url
-              BETTER_AUTH_URL: https://argus.${SECRET_DOMAIN}
+              # The public origin, also on the worker and scraper. The old host is redirected by
+              # httproute.yaml.
+              BETTER_AUTH_URL: &app-url https://app.${SAAS_SECRET_DOMAIN}
               SCRAPER_REMOTE_SECRET: &remote-secret
                 valueFrom:
                   secretKeyRef:
@@ -97,7 +99,7 @@ spec:
             env:
               DATABASE_URL: *db-url
               TZ: Europe/Rome
-              APP_URL: https://argus.${SECRET_DOMAIN}
+              APP_URL: *app-url
               # The scheduler queues the scrape when the window opens and reports caps/backlog:
               # keep these the same as the scraper's below.
               # 09:00 to midnight, Europe/Rome (TZ above): no scraping overnight.
@@ -137,7 +139,7 @@ spec:
                     key: DATABASE_URL
               SCRAPER_REMOTE_SECRET: *remote-secret
               TZ: Europe/Rome
-              APP_URL: https://argus.${SECRET_DOMAIN}
+              APP_URL: *app-url
               # Pacing: see apps/worker/argus_worker/scraper/pacing.py. Challenges that do not clear
               # are solved by hand over remote control during the window, which is what this pace
               # leans on; the yellow-card and post-block ramp guards still apply.
@@ -253,7 +255,7 @@ spec:
             path: /api/health
         # Public: the PWA has to work away from home, and web push needs a public https origin.
         hostnames:
-          - "argus.${SECRET_DOMAIN}"
+          - "app.${SAAS_SECRET_DOMAIN}"
         parentRefs:
           - name: envoy-external
             namespace: network
