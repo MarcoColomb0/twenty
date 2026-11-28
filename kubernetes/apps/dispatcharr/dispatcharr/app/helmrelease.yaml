@@ -25,6 +25,8 @@ spec:
                 value: "1"
           automountServiceAccountToken: false
           enableServiceLinks: false
+          nodeSelector:
+            kubernetes.io/hostname: twenty-hp01
         initContainers:
           vpn:
             image:
@@ -100,6 +102,7 @@ spec:
               PGID: "1000"
               UWSGI_WORKERS: "2"
               CELERY_MAX_WORKERS: "2"
+              LIBVA_DRIVER_NAME: iHD
             probes:
               liveness: &probes
                 enabled: true
@@ -150,8 +153,10 @@ spec:
             resources:
               requests:
                 cpu: 100m
+                gpu.intel.com/i915: 1
               limits:
                 memory: 3Gi
+                gpu.intel.com/i915: 1
     defaultPodOptions:
       securityContext:
         seccompProfile:
