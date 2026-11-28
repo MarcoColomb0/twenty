@@ -4,13 +4,13 @@ kind: PersistentVolumeClaim
 metadata:
   name: jellyfin-config
   annotations:
-    resize.topolvm.io/storage_limit: 10Gi
-    resize.topolvm.io/threshold: 20%
-    resize.topolvm.io/increase: 20%
+    resize.topolvm.io/storage_limit: 20Gi
+    resize.topolvm.io/threshold: 2560Mi
+    resize.topolvm.io/increase: 1Gi
 spec:
   accessModes:
     - ReadWriteOnce
   storageClassName: longhorn
   resources:
     requests:
-      storage: 3Gi
+      storage: 6Gi
