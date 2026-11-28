@@ -143,6 +143,12 @@ spec:
         seccompProfile:
           type: RuntimeDefault
     persistence:
+      gluetun-tmp:
+        type: emptyDir
+        advancedMounts:
+          jellyfin:
+            vpn:
+              - path: /tmp/gluetun
       config:
         existingClaim: jellyfin-config
         advancedMounts:
