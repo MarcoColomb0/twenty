@@ -1,0 +1,182 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: jellyfin
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: jellyfin
+  interval: 1h
+  values:
+    controllers:
+      jellyfin:
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        pod:
+          nodeSelector:
+            kubernetes.io/hostname: twenty-hp01
+          dnsPolicy: None
+          dnsConfig:
+            nameservers:
+              - 127.0.0.1
+            options:
+              - name: ndots
+                value: "1"
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+        initContainers:
+          vpn:
+            image:
+              repository: ghcr.io/qdm12/gluetun
+              tag: v3.41.3
+            restartPolicy: Always
+            env:
+              VPN_SERVICE_PROVIDER: custom
+              VPN_TYPE: wireguard
+              WIREGUARD_IMPLEMENTATION: kernelspace
+              WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL: 25s
+              PUBLICIP_ENABLED: "off"
+              BLOCK_MALICIOUS: "off"
+              FIREWALL_INPUT_PORTS: "8096"
+              FIREWALL_OUTBOUND_SUBNETS: 10.42.0.0/16
+              HTTP_CONTROL_SERVER_ADDRESS: 127.0.0.1:8000
+              VERSION_INFORMATION: "off"
+            envFrom:
+              - secretRef:
+                  name: jellyfin-vpn
+            probes:
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "/gluetun-entrypoint"
+                      - "healthcheck"
+                  periodSeconds: 5
+                  timeoutSeconds: 5
+                  failureThreshold: 24
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "/gluetun-entrypoint"
+                      - "healthcheck"
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+                  failureThreshold: 3
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
+              runAsNonRoot: false
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+                add:
+                  - "NET_ADMIN"
+                  - "NET_BIND_SERVICE"
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 128Mi
+        containers:
+          app:
+            image:
+              repository: ghcr.io/jellyfin/jellyfin
+              tag: "12.4"
+            env:
+              JELLYFIN_PublishedServerUrl: "https://media.${SECRET_DOMAIN}"
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "curl"
+                      - "-fsS"
+                      - "--noproxy"
+                      - "localhost"
+                      - "http://localhost:8096/health"
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+                  failureThreshold: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "curl"
+                      - "-fsS"
+                      - "--noproxy"
+                      - "localhost"
+                      - "http://localhost:8096/health"
+                  periodSeconds: 10
+                  timeoutSeconds: 10
+                  failureThreshold: 30
+            securityContext:
+              runAsUser: 1000
+              runAsGroup: 1000
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities: {drop: ["ALL"]}
+            resources:
+              requests:
+                cpu: 100m
+                gpu.intel.com/i915: 1
+              limits:
+                memory: 2Gi
+                gpu.intel.com/i915: 1
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+    persistence:
+      config:
+        existingClaim: jellyfin-config
+        advancedMounts:
+          jellyfin:
+            app:
+              - path: /config
+      cache:
+        type: emptyDir
+        sizeLimit: 10Gi
+        advancedMounts:
+          jellyfin:
+            app:
+              - path: /cache
+      tmp:
+        type: emptyDir
+        advancedMounts:
+          jellyfin:
+            app:
+              - path: /tmp
+    service:
+      app:
+        controller: jellyfin
+        ports:
+          http:
+            port: &port 8096
+    route:
+      app:
+        hostnames:
+          - "media.${SECRET_DOMAIN}"
+        parentRefs:
+          - name: envoy-internal
+            namespace: network
+            sectionName: https
+        rules:
+          - backendRefs:
+              - identifier: app
+                port: *port
