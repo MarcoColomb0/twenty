@@ -15,3 +15,12 @@ stringData:
   PZ8PRX_TAG: 0.0.0
   LSP_IMAGE: registry.invalid/placeholder
   LSP_TAG: 0.0.0
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jellyfin-vpn
+  namespace: jellyfin
+stringData:
+  WIREGUARD_ENDPOINT_IP: 192.0.2.1
+  WIREGUARD_ENDPOINT_PORT: "51820"
