@@ -1,0 +1,38 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dispatcharr
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dispatcharr
+      app.kubernetes.io/controller: dispatcharr
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: network
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: envoy-internal
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jellyfin
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jellyfin
+              app.kubernetes.io/controller: jellyfin
+      ports:
+        - port: 9191
+          protocol: TCP
+  egress:
+    - to:
+        - ipBlock:
+            cidr: "${WIREGUARD_ENDPOINT_IP}/32"
+      ports:
+        - port: ${WIREGUARD_ENDPOINT_PORT}
+          protocol: UDP

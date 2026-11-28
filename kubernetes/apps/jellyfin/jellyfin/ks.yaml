@@ -15,8 +15,6 @@ spec:
     substituteFrom:
       - name: cluster-secrets
         kind: Secret
-      - name: jellyfin-vpn
-        kind: Secret
   prune: true
   sourceRef:
     kind: GitRepository

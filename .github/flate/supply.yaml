@@ -19,8 +19,8 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: jellyfin-vpn
-  namespace: jellyfin
+  name: dispatcharr-vpn
+  namespace: dispatcharr
 stringData:
   WIREGUARD_ENDPOINT_IP: 192.0.2.1
   WIREGUARD_ENDPOINT_PORT: "51820"

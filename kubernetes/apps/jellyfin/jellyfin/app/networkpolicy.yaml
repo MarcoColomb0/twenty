@@ -24,8 +24,13 @@ spec:
           protocol: TCP
   egress:
     - to:
-        - ipBlock:
-            cidr: "${WIREGUARD_ENDPOINT_IP}/32"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dispatcharr
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dispatcharr
+              app.kubernetes.io/controller: dispatcharr
       ports:
-        - port: ${WIREGUARD_ENDPOINT_PORT}
-          protocol: UDP
+        - port: 9191
+          protocol: TCP

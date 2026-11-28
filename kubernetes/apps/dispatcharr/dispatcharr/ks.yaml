@@ -1,0 +1,26 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dispatcharr
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/dispatcharr/dispatcharr/app
+  postBuild:
+    substitute:
+      APP: dispatcharr
+      VOLSYNC_CLAIM: dispatcharr-data
+      VOLSYNC_SCHEDULE: "15 7 * * *"
+      VOLSYNC_CACHE_CAPACITY: 2Gi
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+      - name: dispatcharr-vpn
+        kind: Secret
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: dispatcharr
+  wait: false

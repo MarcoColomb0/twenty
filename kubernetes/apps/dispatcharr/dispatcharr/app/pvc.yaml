@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dispatcharr-data
+  annotations:
+    resize.topolvm.io/storage_limit: 20Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dispatcharr-db
+  annotations:
+    resize.topolvm.io/storage_limit: 20Gi
+    resize.topolvm.io/threshold: 20%
+    resize.topolvm.io/increase: 20%
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
